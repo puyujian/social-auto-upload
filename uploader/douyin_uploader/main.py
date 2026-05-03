@@ -483,7 +483,8 @@ class DouYinVideo(DouYinBaseUploader):
         douyin_logger.info(_msg("🏃", f"小人开始搬运视频: {self.title}.mp4"))
         douyin_logger.info(_msg("🧭", "小人正在赶往上传主页"))
         await page.wait_for_url("https://creator.douyin.com/creator-micro/content/upload")
-        await page.locator("div[class^='container'] input").set_input_files(self.file_path)
+        upload_input = page.locator("input[type='file']").first
+        await upload_input.set_input_files(self.file_path)
 
         while True:
             try:

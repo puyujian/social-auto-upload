@@ -47,6 +47,15 @@ class FakeLocator:
     async def click(self):
         return None
 
+    async def scroll_into_view_if_needed(self):
+        return None
+
+    async def is_visible(self):
+        return True
+
+    async def inner_text(self):
+        return self.name
+
 
 class RecordingKeyboard:
     def __init__(self):
@@ -60,8 +69,8 @@ class RecordingKeyboard:
 
 
 class RecordingLocator(FakeLocator):
-    def __init__(self, name):
-        super().__init__(name, count=1)
+    def __init__(self, name, children=None):
+        super().__init__(name, count=1, children=children)
         self.actions = []
 
     async def fill(self, value):
@@ -72,6 +81,59 @@ class RecordingLocator(FakeLocator):
 
     async def wait_for(self, **kwargs):
         self.actions.append(("wait_for", kwargs))
+
+    async def scroll_into_view_if_needed(self):
+        self.actions.append(("scroll_into_view_if_needed",))
+
+    async def inner_text(self):
+        return self.name
+
+
+class GroupOptionLocator(RecordingLocator):
+    def __init__(self, name):
+        super().__init__(name)
+        self.container = RecordingLocator(f"{name}-container")
+
+    def locator(self, selector):
+        if selector.startswith("xpath=ancestor::"):
+            return self.container
+        return super().locator(selector)
+
+
+class GroupDropdownLocator(FakeLocator):
+    def __init__(self, option):
+        super().__init__("dropdown", count=1)
+        self.option = option
+
+    def get_by_text(self, text, exact=False):
+        return self.option
+
+    def locator(self, selector):
+        if selector.startswith("xpath=.//*"):
+            return self.option
+        return super().locator(selector)
+
+
+class GroupChatPage:
+    def __init__(self, group_name):
+        self.keyboard = RecordingKeyboard()
+        self.input = RecordingLocator("group-input")
+        self.selector = RecordingLocator(group_name, children={"input": self.input})
+        self.option = GroupOptionLocator(group_name)
+        self.dropdown = GroupDropdownLocator(self.option)
+        self.locators = {
+            ".group-card-select": self.selector,
+            "div.d-popover, div.d-dropdown": self.dropdown,
+        }
+
+    def locator(self, selector):
+        return self.locators[selector]
+
+    def get_by_text(self, text, exact=False):
+        return FakeLocator(str(text), count=0)
+
+    async def wait_for_timeout(self, timeout):
+        return None
 
 
 class RecordingPage:
@@ -240,6 +302,36 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         )
         self.assertNotIn(("type", "", None), page.keyboard.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+
+    def test_video_keeps_optional_group_chat_name(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+            group_chat="手作交流群",
+        )
+
+        self.assertEqual(app.group_chat, "手作交流群")
+
+    def test_set_group_chat_clicks_visible_dropdown_option_container(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+            group_chat="手作交流群",
+        )
+        page = GroupChatPage("手作交流群")
+
+        asyncio.run(app.set_group_chat(page, "手作交流群"))
+
+        self.assertEqual(page.input.actions, [("fill", "手作交流群")])
+        self.assertIn(("click",), page.selector.actions)
+        self.assertIn(("click",), page.option.container.actions)
+        self.assertNotIn(("click",), page.option.actions)
 
     def test_note_title_defaults_do_not_override_explicit_title(self):
         app = xhs_main.XiaoHongShuNote(

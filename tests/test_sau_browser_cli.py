@@ -78,10 +78,13 @@ class BrowserCliParserTests(unittest.TestCase):
                     str(video_path),
                     "--title",
                     "视频标题",
+                    "--group-chat",
+                    "手作交流群",
                 ]
             )
 
         self.assertTrue(args.headless)
+        self.assertEqual(args.group_chat, "手作交流群")
 
     def test_xiaohongshu_upload_note_accepts_headed(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -146,6 +149,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             tags="测试,视频",
             schedule=0,
             thumbnail=None,
+            group_chat="手作交流群",
             debug=False,
             headless=False,
         )
@@ -155,6 +159,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "视频标题")
         self.assertEqual(request.description, "视频简介")
+        self.assertEqual(request.group_chat, "手作交流群")
         self.assertFalse(request.headless)
 
     def test_dispatch_xiaohongshu_upload_note_uses_headless_request(self):
@@ -167,6 +172,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             note="图文正文",
             tags="测试,图文",
             schedule=0,
+            group_chat="图文群",
             debug=False,
             headless=True,
         )
@@ -176,6 +182,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "图文标题")
         self.assertEqual(request.note, "图文正文")
+        self.assertEqual(request.group_chat, "图文群")
         self.assertTrue(request.headless)
         self.assertEqual(len(request.image_files), 2)
 

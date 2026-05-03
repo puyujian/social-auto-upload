@@ -103,6 +103,7 @@ class XiaohongshuVideoUploadRequest:
     tags: list[str]
     publish_date: datetime | int
     thumbnail_file: Path | None = None
+    group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
@@ -116,6 +117,7 @@ class XiaohongshuNoteUploadRequest:
     note: str
     tags: list[str]
     publish_date: datetime | int
+    group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
@@ -346,6 +348,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
         publish_date=request.publish_date,
         account_file=str(account_file),
         thumbnail_path=str(request.thumbnail_file) if request.thumbnail_file else None,
+        group_chat=request.group_chat,
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
@@ -370,6 +373,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
         tags=request.tags,
         publish_date=request.publish_date,
         account_file=str(account_file),
+        group_chat=request.group_chat,
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
@@ -515,6 +519,7 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_video_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     xiaohongshu_upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_video_parser.add_argument("--thumbnail", type=existing_file_path, help="Optional thumbnail path")
+    xiaohongshu_upload_video_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
     add_runtime_flags(xiaohongshu_upload_video_parser)
 
     xiaohongshu_upload_note_parser = xiaohongshu_actions.add_parser("upload-note", help="Upload one note to Xiaohongshu")
@@ -524,6 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_note_parser.add_argument("--note", default="", help="Optional note content")
     xiaohongshu_upload_note_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     xiaohongshu_upload_note_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    xiaohongshu_upload_note_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
     add_runtime_flags(xiaohongshu_upload_note_parser)
 
     bilibili_parser = platform_parsers.add_parser("bilibili", help="Bilibili operations")
@@ -673,6 +679,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 tags=parse_tags(args.tags),
                 publish_date=args.schedule or 0,
                 thumbnail_file=args.thumbnail,
+                group_chat=getattr(args, "group_chat", ""),
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,
@@ -689,6 +696,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 note=args.note,
                 tags=parse_tags(args.tags),
                 publish_date=args.schedule or 0,
+                group_chat=getattr(args, "group_chat", ""),
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,

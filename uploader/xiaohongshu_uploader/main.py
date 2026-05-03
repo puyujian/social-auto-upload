@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -33,6 +34,26 @@ XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
 
 def _msg(emoji: str, text: str) -> str:
     return f"{emoji} {text}"
+
+
+def _exact_text_pattern(text: str) -> re.Pattern[str]:
+    return re.compile(rf"^\s*{re.escape(str(text or '').strip())}\s*$")
+
+
+def _group_chat_option_xpath(text: str) -> str:
+    return (
+        "xpath=.//*[not(contains(@class, 'd-select_input-mirror')) "
+        f"and contains(normalize-space(.), {_xpath_literal(str(text or '').strip())})]"
+    )
+
+
+def _xpath_literal(text: str) -> str:
+    if "'" not in text:
+        return f"'{text}'"
+    if '"' not in text:
+        return f'"{text}"'
+    parts = text.split("'")
+    return "concat(" + ', "\"\'\"", '.join(f"'{part}'" for part in parts) + ")"
 
 
 async def _emit_qrcode_callback(qrcode_callback, payload: dict):
@@ -375,6 +396,64 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 xiaohongshu_logger.debug(_msg("😵", f"读取位置候选列表失败: {inner_e}"))
             return False
 
+    async def set_group_chat(self, page: Page, group_chat: str) -> None:
+        group_chat = str(group_chat or "").strip()
+        if not group_chat:
+            return
+
+        xiaohongshu_logger.info(_msg("👥", f"小人准备关联群聊: {group_chat}"))
+        selector = page.locator(".group-card-select").first
+        await selector.wait_for(state="visible", timeout=10000)
+        await selector.scroll_into_view_if_needed()
+        await selector.click()
+        await page.wait_for_timeout(800)
+
+        input_box = selector.locator("input").first
+        if await input_box.count():
+            await input_box.fill(group_chat)
+        else:
+            await page.keyboard.type(group_chat)
+        await page.wait_for_timeout(1200)
+
+        empty_hint = page.get_by_text("暂无群聊", exact=True).first
+        if await empty_hint.count():
+            try:
+                if await empty_hint.is_visible():
+                    raise RuntimeError("当前账号暂无可选群聊，请先在小红书 App 端创建群聊")
+            except RuntimeError:
+                raise
+            except Exception:
+                pass
+
+        dropdowns = page.locator("div.d-popover, div.d-dropdown").filter(visible=True)
+        option = dropdowns.get_by_text(_exact_text_pattern(group_chat)).filter(visible=True).first
+        if not await option.count():
+            option = dropdowns.get_by_text(group_chat).filter(visible=True).first
+        if not await option.count():
+            option = dropdowns.locator(_group_chat_option_xpath(group_chat)).filter(visible=True).first
+        await option.wait_for(state="visible", timeout=5000)
+
+        option_container = option.locator(
+            "xpath=ancestor::*[contains(@class, 'item') or contains(@class, 'option')][1]"
+        ).filter(visible=True).first
+        if await option_container.count():
+            class_name = (await option_container.get_attribute("class")) or ""
+            aria_disabled = (await option_container.get_attribute("aria-disabled")) or ""
+            if "disabled" in class_name.split() or aria_disabled.lower() == "true":
+                raise RuntimeError(f"群聊不可关联: {group_chat}")
+            await option_container.click()
+        else:
+            await option.click()
+
+        await page.wait_for_timeout(500)
+        try:
+            selected_text = await selector.inner_text()
+        except Exception:
+            selected_text = group_chat
+        if group_chat not in selected_text:
+            raise RuntimeError(f"群聊选择未生效: {group_chat}")
+        xiaohongshu_logger.success(_msg("🥳", f"群聊已经设置成 {group_chat}"))
+
     async def fill_title(self, page: Page) -> None:
         title_container = page.locator('input[placeholder*="填写标题"]')
         await title_container.fill(self.title[:20])
@@ -427,6 +506,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        group_chat: str = "",
     ):
         super().__init__(
             publish_date=publish_date,
@@ -440,6 +520,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         self.tags = tags or []
         self.thumbnail_path = thumbnail_path
         self.desc = desc or ""
+        self.group_chat = str(group_chat or "").strip()
 
     async def validate_upload_args(self):
         await self.validate_base_args()
@@ -529,6 +610,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
 
         xiaohongshu_logger.info(_msg("✍️", "小人开始填标题、描述和话题"))
         await self.fill_meta(page)
+        await self.set_group_chat(page, self.group_chat)
 
         await self.set_thumbnail(page, self.thumbnail_path)
 
@@ -596,6 +678,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        group_chat: str = "",
     ):
         super().__init__(
             publish_date=publish_date,
@@ -609,6 +692,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         self.tags = tags or []
         self.desc = desc if desc is not None else self.note
         self.title = title or ((self.desc or self.note)[:20] if (self.desc or self.note) else "")
+        self.group_chat = str(group_chat or "").strip()
 
     async def validate_upload_args(self):
         await self.validate_base_args()
@@ -651,6 +735,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
 
         xiaohongshu_logger.info(_msg("✍️", "小人开始填标题、描述和话题"))
         await self.fill_meta(page)
+        await self.set_group_chat(page, self.group_chat)
 
         if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time_xiaohongshu(page, self.publish_date)
