@@ -360,11 +360,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         await asyncio.sleep(1)
         publish_date_hour = publish_date.strftime("%Y-%m-%d %H:%M")
         time_input = page.locator('.d-datepicker-input-filter input.d-text')
-        await time_input.fill("")
-        await self.human.click(page, locator=time_input)
-        await page.keyboard.press("Control+KeyA")
-        await page.keyboard.press("Delete")
-        await self.human.type(page, str(publish_date_hour))
+        await self.fill_text_field(page, time_input, str(publish_date_hour))
         await asyncio.sleep(1)
 
     async def set_location(self, page: Page, location: str = "青岛市"):
@@ -486,13 +482,50 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             raise RuntimeError(f"群聊选择未生效: {group_chat}")
         xiaohongshu_logger.success(_msg("🥳", f"群聊已经设置成 {group_chat}"))
 
+    async def fill_text_field(self, page: Page, locator, text: str, *, timeout: int = 10000) -> None:
+        field = locator.first
+        await field.wait_for(state="visible", timeout=timeout)
+        try:
+            await field.fill("")
+            await self.human.type(page, text, field_locator=field)
+            return
+        except Exception as exc:
+            xiaohongshu_logger.debug(_msg("😵", f"常规填写失败，改用页面内写入: {_short_error(exc)}"))
+
+        await field.evaluate(
+            """(node, value) => {
+                const target = node.closest('[contenteditable="true"]') || node;
+                target.focus();
+                target.textContent = "";
+                const selection = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(target);
+                range.collapse(false);
+                if (selection) {
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+                if (!document.execCommand || !document.execCommand("insertText", false, value)) {
+                    target.textContent = value;
+                    range.selectNodeContents(target);
+                    range.collapse(false);
+                    if (selection) {
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                    }
+                }
+                const inputEvent = typeof InputEvent === "function"
+                    ? new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })
+                    : new Event("input", { bubbles: true });
+                target.dispatchEvent(inputEvent);
+                target.dispatchEvent(new Event("change", { bubbles: true }));
+            }""",
+            text,
+        )
+
     async def fill_title(self, page: Page) -> None:
         title_container = page.locator('input[placeholder*="填写标题"]')
-        await title_container.fill("")
-        await self.human.click(page, locator=title_container)
-        await page.keyboard.press("Control+KeyA")
-        await page.keyboard.press("Delete")
-        await self.human.type(page, self.title[:20])
+        await self.fill_text_field(page, title_container, self.title[:20])
 
     async def fill_desc(self, page: Page) -> None:
         if not getattr(self, "desc", ""):
@@ -500,10 +533,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
         desc = page.locator('p[data-placeholder*="输入正文描述"]')
         await self.human_click_locator(page, desc)
-        await page.keyboard.press("Backspace")
-        await page.keyboard.press("Control+KeyA")
-        await page.keyboard.press("Delete")
-        await self.human.type(page, self.desc)
+        await self.fill_text_field(page, desc, self.desc)
         await page.keyboard.press("Enter")
 
     async def fill_tags(self, page: Page) -> None:

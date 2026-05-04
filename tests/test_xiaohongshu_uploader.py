@@ -1,6 +1,7 @@
 import asyncio
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -76,6 +77,9 @@ class RecordingLocator(FakeLocator):
     async def fill(self, value):
         self.actions.append(("fill", value))
 
+    async def evaluate(self, script, value):
+        self.actions.append(("evaluate", value))
+
     async def click(self):
         self.actions.append(("click",))
 
@@ -93,6 +97,12 @@ class TimeoutLocator(RecordingLocator):
     async def wait_for(self, **kwargs):
         self.actions.append(("wait_for", kwargs))
         raise TimeoutError(f"{self.name} timed out")
+
+
+class NoFillLocator(RecordingLocator):
+    async def fill(self, value):
+        self.actions.append(("fill", value))
+        raise RuntimeError("not fillable")
 
 
 class GroupOptionLocator(RecordingLocator):
@@ -299,11 +309,24 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         self.assertEqual(
             page.locators['input[placeholder*="填写标题"]'].actions,
-            [("fill", "")],
+            [
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("fill", ""),
+            ],
         )
-        self.assertIn(("type", "标题内容", None), app.human.actions)
+        self.assertIn(("type", "标题内容", "title"), app.human.actions)
         self.assertIn(("click", "desc", 10000), app.human.actions)
-        self.assertIn(("type", "描述内容", None), app.human.actions)
+        self.assertEqual(
+            page.locators['p[data-placeholder*="输入正文描述"]'].actions,
+            [
+                ("scroll_into_view_if_needed",),
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("fill", ""),
+            ],
+        )
+        self.assertIn(("type", "描述内容", "desc"), app.human.actions)
+        self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
+        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
         self.assertIn(("type", "#话题2", 30), page.keyboard.actions)
         self.assertIn(("type", "#话题3", 30), page.keyboard.actions)
@@ -336,6 +359,70 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertIn(("click", "desc", 10000), app.human.actions)
         self.assertNotIn(("type", "", None), app.human.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+
+    def test_fill_desc_falls_back_to_dom_write_without_page_select_all(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+            desc="描述内容",
+        )
+        app.human = RecordingHuman()
+        page = RecordingPage()
+        page.locators['p[data-placeholder*="输入正文描述"]'] = NoFillLocator("desc")
+
+        asyncio.run(app.fill_desc(page))
+
+        self.assertEqual(
+            page.locators['p[data-placeholder*="输入正文描述"]'].actions,
+            [
+                ("scroll_into_view_if_needed",),
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("fill", ""),
+                ("evaluate", "描述内容"),
+            ],
+        )
+        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
+        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
+        self.assertNotIn(("press", "Delete"), page.keyboard.actions)
+        self.assertNotIn(("press", "Backspace"), page.keyboard.actions)
+        self.assertIn(("press", "Enter"), page.keyboard.actions)
+
+    def test_set_schedule_time_uses_field_fill_without_page_select_all(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        app.human = RecordingHuman()
+        page = RecordingPage()
+        schedule_switch = RecordingLocator("schedule-switch")
+        page.locators[".custom-switch-card"] = RecordingLocator(
+            "schedule-card",
+            children={".d-switch": schedule_switch},
+        )
+        page.locators[".d-datepicker-input-filter input.d-text"] = RecordingLocator("date-input")
+
+        with patch("uploader.xiaohongshu_uploader.main.asyncio.sleep", new=AsyncMock(return_value=None)):
+            asyncio.run(app.set_schedule_time_xiaohongshu(page, datetime(2026, 5, 4, 9, 30)))
+
+        self.assertIn(("click", "schedule-switch", 10000), app.human.actions)
+        self.assertEqual(
+            page.locators[".d-datepicker-input-filter input.d-text"].actions,
+            [
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("fill", ""),
+            ],
+        )
+        self.assertIn(("type", "2026-05-04 09:30", "date-input"), app.human.actions)
+        self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
+        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
+        self.assertNotIn(("press", "Delete"), page.keyboard.actions)
 
     def test_video_fill_meta_keeps_text_tag_when_topic_suggestion_times_out(self):
         app = xhs_main.XiaoHongShuVideo(
