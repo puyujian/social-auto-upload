@@ -89,6 +89,12 @@ class RecordingLocator(FakeLocator):
         return self.name
 
 
+class TimeoutLocator(RecordingLocator):
+    async def wait_for(self, **kwargs):
+        self.actions.append(("wait_for", kwargs))
+        raise TimeoutError(f"{self.name} timed out")
+
+
 class GroupOptionLocator(RecordingLocator):
     def __init__(self, name):
         super().__init__(name)
@@ -127,13 +133,13 @@ class GroupChatPage:
         }
 
     def locator(self, selector):
-        return self.locators[selector]
-
-    def get_by_text(self, text, exact=False):
-        return FakeLocator(str(text), count=0)
+        return self.locators.get(selector, FakeLocator(selector))
 
     async def wait_for_timeout(self, timeout):
         return None
+
+    def get_by_text(self, text, exact=False):
+        return FakeLocator(str(text), count=0)
 
 
 class RecordingPage:
@@ -147,7 +153,28 @@ class RecordingPage:
         }
 
     def locator(self, selector):
-        return self.locators[selector]
+        return self.locators.get(selector, FakeLocator(selector))
+
+    async def wait_for_timeout(self, timeout):
+        return None
+
+
+class RecordingHuman:
+    def __init__(self):
+        self.actions = []
+
+    async def apply_fingerprint_obfuscation(self, page, context):
+        self.actions.append(("fingerprint", page, context))
+
+    async def goto(self, page, url):
+        self.actions.append(("goto", url))
+
+    async def click(self, page, selector=None, *, locator=None, timeout=None, **kwargs):
+        target = locator.name if locator is not None else selector
+        self.actions.append(("click", target, timeout))
+
+    async def type(self, page, text, *, field_locator=None):
+        self.actions.append(("type", text, field_locator.name if field_locator else None))
 
 
 class XiaohongshuUploaderTests(unittest.TestCase):
@@ -256,33 +283,42 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 asyncio.run(app.validate_upload_args())
 
-    def test_video_fill_meta_uses_desc_then_first_tag(self):
+    def test_video_fill_meta_uses_desc_then_all_tags(self):
         app = xhs_main.XiaoHongShuVideo(
             title="标题内容",
             file_path="demo.mp4",
-            tags=["话题1"],
+            tags=["话题1", "话题2", "#话题3", ""],
             publish_date=0,
             account_file="account.json",
             desc="描述内容",
         )
+        app.human = RecordingHuman()
         page = RecordingPage()
 
         asyncio.run(app.fill_meta(page))
 
         self.assertEqual(
             page.locators['input[placeholder*="填写标题"]'].actions,
-            [("fill", "标题内容")],
+            [("fill", "")],
         )
-        self.assertEqual(
-            page.locators['p[data-placeholder*="输入正文描述"]'].actions,
-            [("click",)],
-        )
-        self.assertIn(("type", "描述内容", None), page.keyboard.actions)
+        self.assertIn(("type", "标题内容", None), app.human.actions)
+        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertIn(("type", "描述内容", None), app.human.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+        self.assertIn(("type", "#话题2", 30), page.keyboard.actions)
+        self.assertIn(("type", "#话题3", 30), page.keyboard.actions)
         self.assertEqual(
             page.locators['#creator-editor-topic-container .item'].actions,
-            [("wait_for", {"state": "visible", "timeout": 2000}), ("click",)],
+            [
+                ("wait_for", {"state": "visible", "timeout": 5000}),
+                ("scroll_into_view_if_needed",),
+                ("wait_for", {"state": "visible", "timeout": 5000}),
+                ("scroll_into_view_if_needed",),
+                ("wait_for", {"state": "visible", "timeout": 5000}),
+                ("scroll_into_view_if_needed",),
+            ],
         )
+        self.assertIn(("click", "topic-item", 10000), app.human.actions)
 
     def test_video_fill_meta_can_fill_first_tag_without_desc(self):
         app = xhs_main.XiaoHongShuVideo(
@@ -292,16 +328,32 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             publish_date=0,
             account_file="account.json",
         )
+        app.human = RecordingHuman()
         page = RecordingPage()
 
         asyncio.run(app.fill_meta(page))
 
-        self.assertEqual(
-            page.locators['p[data-placeholder*="输入正文描述"]'].actions,
-            [("click",)],
-        )
-        self.assertNotIn(("type", "", None), page.keyboard.actions)
+        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertNotIn(("type", "", None), app.human.actions)
         self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+
+    def test_video_fill_meta_keeps_text_tag_when_topic_suggestion_times_out(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=["话题1"],
+            publish_date=0,
+            account_file="account.json",
+        )
+        app.human = RecordingHuman()
+        page = RecordingPage()
+        page.locators["#creator-editor-topic-container"] = TimeoutLocator("topic-container")
+
+        asyncio.run(app.fill_meta(page))
+
+        self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+        self.assertIn(("press", "Enter"), page.keyboard.actions)
+        self.assertEqual(page.locators['#creator-editor-topic-container .item'].actions, [])
 
     def test_video_keeps_optional_group_chat_name(self):
         app = xhs_main.XiaoHongShuVideo(
@@ -324,14 +376,33 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             account_file="account.json",
             group_chat="手作交流群",
         )
+        app.human = RecordingHuman()
         page = GroupChatPage("手作交流群")
 
         asyncio.run(app.set_group_chat(page, "手作交流群"))
 
-        self.assertEqual(page.input.actions, [("fill", "手作交流群")])
-        self.assertIn(("click",), page.selector.actions)
-        self.assertIn(("click",), page.option.container.actions)
+        self.assertEqual(page.input.actions, [("fill", "")])
+        self.assertIn(("click", "手作交流群", 10000), app.human.actions)
+        self.assertIn(("click", "group-input", None), app.human.actions)
+        self.assertIn(("type", "手作交流群", None), app.human.actions)
+        self.assertIn(("click", "手作交流群-container", 10000), app.human.actions)
         self.assertNotIn(("click",), page.option.actions)
+
+    def test_apply_human_behavior_uses_page_and_context(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        app.human = RecordingHuman()
+        page = object()
+        context = object()
+
+        asyncio.run(app.apply_human_behavior(page, context))
+
+        self.assertEqual(app.human.actions, [("fingerprint", page, context)])
 
     def test_note_title_defaults_do_not_override_explicit_title(self):
         app = xhs_main.XiaoHongShuNote(

@@ -20,6 +20,7 @@ from utils.login_qrcode import decode_qrcode_from_path
 from utils.login_qrcode import print_terminal_qrcode
 from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
+from utils.human_behavior import HumanBehaviorModule
 from utils.log import xiaohongshu_logger
 
 XHS_LOGIN_URL = "https://creator.xiaohongshu.com/login"
@@ -30,6 +31,10 @@ XHS_LOGIN_BOX_SELECTOR = "div[class*='login-box']"
 XHS_LOGIN_SWITCH_SELECTOR = "img.css-wemwzq"
 XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
 XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
+XHS_TOPIC_CONTAINER_SELECTOR = "#creator-editor-topic-container"
+XHS_TOPIC_OPTION_SELECTOR = f"{XHS_TOPIC_CONTAINER_SELECTOR} .item"
+XHS_TOPIC_CONTAINER_TIMEOUT = 10000
+XHS_TOPIC_OPTION_TIMEOUT = 5000
 
 
 def _msg(emoji: str, text: str) -> str:
@@ -54,6 +59,11 @@ def _xpath_literal(text: str) -> str:
         return f'"{text}"'
     parts = text.split("'")
     return "concat(" + ', "\"\'\"", '.join(f"'{part}'" for part in parts) + ")"
+
+
+def _short_error(exc: Exception) -> str:
+    message = str(exc).splitlines()[0].strip()
+    return message or exc.__class__.__name__
 
 
 async def _emit_qrcode_callback(qrcode_callback, payload: dict):
@@ -310,6 +320,21 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         self.date_format = "%Y年%m月%d日 %H:%M"
         self.local_executable_path = LOCAL_CHROME_PATH
         self.headless = headless
+        self.human = HumanBehaviorModule()
+
+    async def apply_human_behavior(self, page: Page, context) -> None:
+        await self.human.apply_fingerprint_obfuscation(page, context)
+
+    async def goto_publish_page(self, page: Page, url: str) -> None:
+        await self.human.goto(page, url)
+        await page.wait_for_url(url)
+
+    async def human_click_locator(self, page: Page, locator, *, timeout: int = 10000) -> None:
+        try:
+            await locator.scroll_into_view_if_needed()
+        except Exception:
+            pass
+        await self.human.click(page, locator=locator, timeout=timeout)
 
     async def validate_base_args(self):
         if not os.path.exists(self.account_file):
@@ -330,11 +355,16 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
     async def set_schedule_time_xiaohongshu(self, page: Page, publish_date: datetime):
         xiaohongshu_logger.info(_msg("🕒", f"小人准备设置定时发布时间: {publish_date.strftime(self.date_format)}"))
-        await page.locator('.custom-switch-card').filter(has_text="定时发布").locator('.d-switch').click()
+        switch = page.locator('.custom-switch-card').filter(has_text="定时发布").locator('.d-switch')
+        await self.human_click_locator(page, switch)
         await asyncio.sleep(1)
         publish_date_hour = publish_date.strftime("%Y-%m-%d %H:%M")
         time_input = page.locator('.d-datepicker-input-filter input.d-text')
-        await time_input.fill(str(publish_date_hour))
+        await time_input.fill("")
+        await self.human.click(page, locator=time_input)
+        await page.keyboard.press("Control+KeyA")
+        await page.keyboard.press("Delete")
+        await self.human.type(page, str(publish_date_hour))
         await asyncio.sleep(1)
 
     async def set_location(self, page: Page, location: str = "青岛市"):
@@ -405,14 +435,16 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         selector = page.locator(".group-card-select").first
         await selector.wait_for(state="visible", timeout=10000)
         await selector.scroll_into_view_if_needed()
-        await selector.click()
+        await self.human_click_locator(page, selector)
         await page.wait_for_timeout(800)
 
         input_box = selector.locator("input").first
         if await input_box.count():
-            await input_box.fill(group_chat)
+            await input_box.fill("")
+            await self.human.click(page, locator=input_box)
+            await self.human.type(page, group_chat)
         else:
-            await page.keyboard.type(group_chat)
+            await self.human.type(page, group_chat)
         await page.wait_for_timeout(1200)
 
         empty_hint = page.get_by_text("暂无群聊", exact=True).first
@@ -441,9 +473,9 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             aria_disabled = (await option_container.get_attribute("aria-disabled")) or ""
             if "disabled" in class_name.split() or aria_disabled.lower() == "true":
                 raise RuntimeError(f"群聊不可关联: {group_chat}")
-            await option_container.click()
+            await self.human_click_locator(page, option_container)
         else:
-            await option.click()
+            await self.human_click_locator(page, option)
 
         await page.wait_for_timeout(500)
         try:
@@ -456,18 +488,22 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
     async def fill_title(self, page: Page) -> None:
         title_container = page.locator('input[placeholder*="填写标题"]')
-        await title_container.fill(self.title[:20])
+        await title_container.fill("")
+        await self.human.click(page, locator=title_container)
+        await page.keyboard.press("Control+KeyA")
+        await page.keyboard.press("Delete")
+        await self.human.type(page, self.title[:20])
 
     async def fill_desc(self, page: Page) -> None:
         if not getattr(self, "desc", ""):
             return
 
         desc = page.locator('p[data-placeholder*="输入正文描述"]')
-        await desc.click()
+        await self.human_click_locator(page, desc)
         await page.keyboard.press("Backspace")
         await page.keyboard.press("Control+KeyA")
         await page.keyboard.press("Delete")
-        await page.keyboard.type(self.desc)
+        await self.human.type(page, self.desc)
         await page.keyboard.press("Enter")
 
     async def fill_tags(self, page: Page) -> None:
@@ -476,16 +512,30 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
         if not getattr(self, "desc", ""):
             desc = page.locator('p[data-placeholder*="输入正文描述"]')
-            await desc.click()
+            await self.human_click_locator(page, desc)
 
-        await page.keyboard.type("#" + self.tags[0], delay=30)
-        await page.locator('#creator-editor-topic-container').wait_for(
-            state="visible",
-            timeout=3000
-        )
-        first_item = page.locator('#creator-editor-topic-container .item').first
-        await first_item.wait_for(state="visible", timeout=2000)
-        await first_item.click()
+        tags = [str(tag or "").strip().lstrip("#") for tag in self.tags]
+        tags = [tag for tag in tags if tag]
+        if not tags:
+            return
+
+        for tag in tags:
+            await page.keyboard.type("#" + tag, delay=30)
+            try:
+                await page.locator(XHS_TOPIC_CONTAINER_SELECTOR).wait_for(
+                    state="visible",
+                    timeout=XHS_TOPIC_CONTAINER_TIMEOUT,
+                )
+                first_item = page.locator(XHS_TOPIC_OPTION_SELECTOR).first
+                await first_item.wait_for(state="visible", timeout=XHS_TOPIC_OPTION_TIMEOUT)
+                await self.human_click_locator(page, first_item)
+                await page.wait_for_timeout(300)
+            except Exception as exc:
+                xiaohongshu_logger.warning(
+                    _msg("😵", f"话题候选没有出现，保留文本话题继续发布: #{tag} ({_short_error(exc)})")
+                )
+                await page.keyboard.press("Enter")
+                await page.wait_for_timeout(500)
 
     async def fill_meta(self, page: Page) -> None:
         await self.fill_title(page)
@@ -559,7 +609,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
 
         confirm_button = modal.locator("button.mojito-button").filter(has_text="确定").first
         await confirm_button.wait_for(state="visible", timeout=10000)
-        await confirm_button.click()
+        await self.human_click_locator(page, confirm_button)
 
         await modal.wait_for(state="hidden", timeout=30000)
         xiaohongshu_logger.success(_msg("🥳", "封面已经设置完成"))
@@ -567,8 +617,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
     async def upload_video_content(self, page: Page) -> None:
         xiaohongshu_logger.info(_msg("🏃", f"小人开始搬运视频: {self.title}.mp4"))
         xiaohongshu_logger.info(_msg("🧭", "小人正在赶往视频发布页"))
-        await page.goto(XHS_PUBLISH_VIDEO_URL)
-        await page.wait_for_url(XHS_PUBLISH_VIDEO_URL)
+        await self.goto_publish_page(page, XHS_PUBLISH_VIDEO_URL)
         await page.locator("div[class^='upload-content'] input[class='upload-input']").set_input_files(self.file_path)
 
         while True:
@@ -622,9 +671,9 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         while True:
             try:
                 if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
-                    await page.locator('button:has-text("定时发布")').click()
+                    await self.human_click_locator(page, page.locator('button:has-text("定时发布")').first)
                 else:
-                    await page.locator('button:has-text("发布")').click()
+                    await self.human_click_locator(page, page.locator('button:has-text("发布")').first)
                 await page.wait_for_url(
                     "https://creator.xiaohongshu.com/publish/success?**",
                     timeout=3000
@@ -650,6 +699,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
 
         try:
             page = await context.new_page()
+            await self.apply_human_behavior(page, context)
             await self.upload_video_content(page)
             await context.storage_state(path=self.account_file)
             xiaohongshu_logger.success(_msg("🥳", "cookie 更新完毕"))
@@ -712,8 +762,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
     async def upload_note_content(self, page: Page) -> None:
         xiaohongshu_logger.info(_msg("🏃", f"小人开始搬运图文，共 {len(self.image_paths)} 张图片"))
         xiaohongshu_logger.info(_msg("🧭", "小人正在赶往图文发布页"))
-        await page.goto(XHS_PUBLISH_NOTE_URL)
-        await page.wait_for_url(XHS_PUBLISH_NOTE_URL)
+        await self.goto_publish_page(page, XHS_PUBLISH_NOTE_URL)
 
         upload_input = page.locator('input[type="file"][accept*="image"]').first
         if not await upload_input.count():
@@ -743,9 +792,9 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         while True:
             try:
                 if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
-                    await page.locator('button:has-text("定时发布")').click()
+                    await self.human_click_locator(page, page.locator('button:has-text("定时发布")').first)
                 else:
-                    await page.locator('button:has-text("发布")').click()
+                    await self.human_click_locator(page, page.locator('button:has-text("发布")').first)
                 await page.wait_for_url(
                     XHS_PUBLISH_SUCCESS_URL_PATTERN,
                     timeout=3000
@@ -771,6 +820,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
 
         try:
             page = await context.new_page()
+            await self.apply_human_behavior(page, context)
             await self.upload_note_content(page)
             await context.storage_state(path=self.account_file)
             xiaohongshu_logger.success(_msg("🥳", "cookie 更新完毕"))
