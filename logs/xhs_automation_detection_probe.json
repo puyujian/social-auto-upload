@@ -1,0 +1,835 @@
+[
+  {
+    "account_file": "xiaohongshu_芊芊.json",
+    "valid": true,
+    "snapshot": {
+      "url": "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=image",
+      "title": "小红书创作服务平台",
+      "webdriver": false,
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+      "userAgentData": {
+        "brands": [
+          {
+            "brand": "Chromium",
+            "version": "148"
+          },
+          {
+            "brand": "Google Chrome",
+            "version": "148"
+          },
+          {
+            "brand": "Not/A)Brand",
+            "version": "99"
+          }
+        ],
+        "mobile": false,
+        "platform": "Windows"
+      },
+      "language": "zh-CN",
+      "languages": [
+        "zh-CN"
+      ],
+      "platform": "Win32",
+      "hardwareConcurrency": 28,
+      "deviceMemory": 32,
+      "maxTouchPoints": 10,
+      "pluginsLength": 5,
+      "mimeTypesLength": 2,
+      "cookieEnabled": true,
+      "chromeKeys": [
+        "loadTimes",
+        "csi"
+      ],
+      "outer": {
+        "width": 1536,
+        "height": 864,
+        "innerWidth": 1536,
+        "innerHeight": 864
+      },
+      "timezone": "Asia/Shanghai",
+      "webgl": {
+        "error": "no webgl"
+      },
+      "localStorageKeys": [
+        "USER_INFO_FOR_BIZ",
+        "USER_INFO",
+        "snsWebPublishCurrentUser",
+        "sdt_source_storage_key"
+      ],
+      "sessionStorageKeys": []
+    },
+    "request_hits": [
+      {
+        "method": "POST",
+        "url": "https://as.xiaohongshu.com/api/sec/v1/scripting",
+        "resource": "xhr"
+      },
+      {
+        "method": "POST",
+        "url": "https://edith.xiaohongshu.com/api/redcaptcha/v2/getconfig",
+        "resource": "xhr"
+      },
+      {
+        "method": "POST",
+        "url": "https://as.xiaohongshu.com/api/sec/v1/sbtsource",
+        "resource": "xhr"
+      },
+      {
+        "method": "POST",
+        "url": "https://as.xiaohongshu.com/api/sec/v1/scripting",
+        "resource": "xhr"
+      },
+      {
+        "method": "POST",
+        "url": "https://as.xiaohongshu.com/api/sec/v1/shield/webprofile",
+        "resource": "xhr"
+      }
+    ],
+    "script_hits": [
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/bundler-runtime.a302d827.js",
+        "hits": [
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "a1",
+            "snippet": "845:\"6bbaba48\",3850:\"3f07826d\",3908:\"2aab4493\",3925:\"9cca4879\",3998:\"c146ce99\",4127:\"1c3f2a17\",421:\"4b605109\",4231:\"cf48cafb\",4256:\"4daff4d2\",4269:\"21dbcec5\",431:\"f08d5ef0\",4353:\"443d6988\",4366:\"e1106d82\",4404:\"e62c3663\",4"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-delight.dbad11b3.js",
+        "hits": [
+          "canvas",
+          "bot",
+          "risk",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": " n?parseFloat((Number(n)/100).toFixed(2)):0};function ow(e){var t=document.createElement(\"canvas\"),n=t.getContext(\"2d\"),o=2*e;return t.width=o,t.height=o,n.fillStyle=\"#ffffff\",n.fillRect(0,0,o,o),n.fillStyle=\"#ccd5db\",n.fillRe"
+          },
+          {
+            "term": "bot",
+            "snippet": "rminate-checked-key-set\",\"loading-keys\",\"index\"])])}),128))])),(0,d.renderSlot)(e.$slots,\"bottom\")])}}}),ed=function(e,t){var n=new Map,o=new Map,l=0,r=function(e,a,i,u){var c=(0,h._)(u||[]).concat([e]),d=e[t.children],s=i?"
+          },
+          {
+            "term": "risk",
+            "snippet": ",feedbackText:{},feedbackLayout:{},tooltipLayout:{},feedbackStatus:{},feedbackIcon:{},asterisk:{},gridSpan:{},bordered:{default:!0},inset:{},labelTextBold:{default:!0}},setup:function(e,t){var n=t.slots,o=(0,d.ref)(!1),l=lx("
+          },
+          {
+            "term": "a1",
+            "snippet": "ily:\"PingFang SC\"},i={itemHeight:8,itemWidth:8,borderRadius:2,icon:\"path://M904.5,437.5h-7a1,1,0,0,1-1-1v-7a1,1,0,0,1,1-1h7a1,1,0,0,1,1,1v7A1,1,0,0,1,904.5,437.5Z\",show:!1,left:\"-3\",top:\"25\",type:\"scroll\",pageIcons:{horizo"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-polyfill.4a307ce9.js",
+        "hits": [
+          "canvas",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "v,e);continue}if(P)u=tr(e,{transfer:[e]});else switch(n){case\"ImageBitmap\":l(o=i.OffscreenCanvas)||tu(n,Q);try{(s=new o(e.width,e.height)).getContext(\"bitmaprenderer\").transferFromImageBitmap(e),u=s.transferToImageBitmap()}cat"
+          },
+          {
+            "term": "a1",
+            "snippet": ")||\"xn--e1aybc\"!==new URL(\"https://тест\").host||\"#%D0%B1\"!==new URL(\"https://a#б\").hash||\"a1c3\"!==n||\"x\"!==new URL(\"https://x\",void 0).host})},7692:function(t,r,e){\"use strict\";t.exports=e(62131)&&!Symbol.sham&&\"symbol\"==t"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/project-publish-vue.20cf2cba.js",
+        "hits": [
+          "hardwareConcurrency",
+          "canvas",
+          "webgl",
+          "bot",
+          "risk",
+          "verify",
+          "xsec",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "hardwareConcurrency",
+            "snippet": ",e),(0,r._)(this,\"name\",\"ai-tracker\"),(0,r._)(this,\"core\",0),this.core=null!=(t=navigator.hardwareConcurrency)?t:0}return(0,o._)(e,[{key:\"flush\",value:function(e){var t,n,a;null==(a=window)||null==(n=a.eaglet)||null==(t=n.push)||t.call(n,{"
+          },
+          {
+            "term": "canvas",
+            "snippet": "eateImageBitmap(new Blob([g],{type:\"image/jpeg\"}))];case 1:if(e=c.sent(),!(t=new OffscreenCanvas(224,224).getContext(\"2d\")))throw e.close(),Error(\"无法获取 OffscreenCanvas 2d 上下文\");for(t.drawImage(e,0,0,224,224),e.close(),n=t.getI"
+          },
+          {
+            "term": "webgl",
+            "snippet": "\"gpu\"in navigator&&o.push(\"webgpu\");try{((r=document.createElement(\"canvas\")).getContext(\"webgl2\")||r.getContext(\"webgl\"))&&(o.push(\"webgl\"),r=null)}catch(e){}return o.push(\"wasm\"),i=this,[4,h.wV.create(this.bModal,{execution"
+          },
+          {
+            "term": "bot",
+            "snippet": "a-v-59b62739] {\\n background: white;\\n border-radius: 12px;\\n padding: 30px;\\n margin-bottom: 30px;\\n box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);\\n max-width: 1400px;\\n margin-left: auto;\\n margin-right: auto;\\n}\\n."
+          },
+          {
+            "term": "risk",
+            "snippet": "tials:!0})}function y(e){return l(\"\".concat((0,r.pG)(),\"/api/sns/v1/mappoi/web_api/travel/riskinfo\"),e,{transform:!0,withCredentials:!0})}},69694:function(e,t,n){n.d(t,{Aw:function(){return d},DI:function(){return m},G9:func"
+          },
+          {
+            "term": "verify",
+            "snippet": "_status:e.relationStatus,user_page_url:\"\",avatar:e.avatar,fans_cnt:e.fansCnt,red_official_verify_type:e.redOfficialVerifyType})}})}),(null==(a=D.value)?void 0:a.insertTime)!=null&&Y.value.hasMidVideoAd&&I.push({type:\"AD_REVENU"
+          },
+          {
+            "term": "xsec",
+            "snippet": "d:!1,errorMessage:\"音频时长不能少于\".concat(y,\"分钟，请重新选择\")}];if(b=null!=(k=null==a?void 0:a.audioMaxSeconds)?k:7200,d>b)return C=Math.ceil(b/p.HOUR),[2,{valid:!1,errorMessage:\"不支持上传\".concat(C,\"小时以上的音频，请重新选择\")}];return[2,{valid:!0,med"
+          },
+          {
+            "term": "a1",
+            "snippet": "tion_redclub_kelian.5d51e56a.png\",x=n.p+\"resource/image/xy_emotion_redclub_zhuakuang.be031a1b.png\",V=n.p+\"resource/image/xy_emotion_redclub_wulian.1eb36986.png\",T=n.p+\"resource/image/xy_emotion_redclub_paidui.b9a5d7bd.png\""
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-yam-beer.c34cec91.js",
+        "hits": [
+          "canvas",
+          "bot",
+          "a1",
+          "shield"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "\":{bg:\"rgba(0,0,0,0.2)\"}},E=(0,P.vr)({\"&.viewer-backdrop\":{bg:\"rgba(0,0,0,0.6)\"},\".viewer-canvas\":{top:\"48px\",bottom:\"146px\",overflow:\"visible\"},\".viewer-navbar\":{bg:\"rgba(0,0,0,0.4)\"},\".viewer-toolbar\":{\"& > ul\":{mb:\"36px\",py"
+          },
+          {
+            "term": "bot",
+            "snippet": "{},B),{display:\"inline-flex\",justifyContent:\"center\",alignItems:\"center\",mr:\"16px\",paddingBottom:0,paddingTop:0,borderRadius:\"button\"}),content:{overflow:\"hidden\",textOverflow:\"ellipsis\",whiteSpace:\"nowrap\"}}),(0,z.mn)(\"cmp"
+          },
+          {
+            "term": "a1",
+            "snippet": ".387.884-1.098 1.67-1.617 2.186l-.002.001-1.478 1.463 2.07 9.286c.071.316.033.641-.045.907a1.85 1.85 0 01-.446.783l-.97.967c-.253.252-.623.419-1.033.346-.41-.073-.698-.356-.849-.677l-3.314-7.076-4.056 4.013c-.011.78-.056 1"
+          },
+          {
+            "term": "shield",
+            "snippet": ".332 1.211c1.293-1.423 2.534-3.054 2.534-5.782 0-2.825-1.312-4.52-2.71-5.969z\"],\"messages-shielded-f\":[\"M4 14.976c0 .299.076.58.21.825L18 7.84V4.236c0-.959-.784-1.736-1.75-1.736-.418 0-.822.148-1.139.418l-6.948 4.31a.251.251 0"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-element-plus.fce0e9f6.js",
+        "hits": [
+          "bot",
+          "risk",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "bot",
+            "snippet": "Number,default:300},placement:{type:(0,k.jq)(String),values:[\"top\",\"top-start\",\"top-end\",\"bottom\",\"bottom-start\",\"bottom-end\"],default:\"bottom-start\"},fetchSuggestions:{type:(0,k.jq)([Function,Array]),default:w.tE},popperCl"
+          },
+          {
+            "term": "risk",
+            "snippet": "ct)},labelPosition:{type:String,values:[\"left\",\"right\",\"top\"],default:\"right\"},requireAsteriskPosition:{type:String,values:[\"left\",\"right\"],default:\"left\"},labelWidth:{type:[String,Number],default:\"\"},labelSuffix:{type:Strin"
+          },
+          {
+            "term": "a1",
+            "snippet": "),o=n(66491),a=n(29492);n(24628);var l=n(74673),u=n(76245),i=n(86564),c=(0,u.b_)((0,a._)({a11y:{type:Boolean,default:!0},locale:{type:(0,u.jq)(Object)},size:i.mU,button:{type:(0,u.jq)(Object)},card:{type:(0,u.jq)(Object)},"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-launcher.882564c0.js",
+        "hits": [
+          "canvas",
+          "webgl",
+          "fingerprint",
+          "bot",
+          "risk",
+          "captcha",
+          "verify",
+          "xsec",
+          "a1",
+          "xhsFingerprintV3",
+          "scripting",
+          "sbtsource",
+          "shield",
+          "webprofile",
+          "registerCanvas"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "k/v2/shield/profile\",\"fe_api/burdock/v2/shield/captcha\",\"fe_api/burdock/v2/shield/registerCanvas\",\"api/sec/v1/shield/webprofile\",\"api/sec/v1/shield/captcha\",/fe_api\\/burdock\\/v2\\/note\\/[0-9a-zA-Z]+\\/tags/,/fe_api\\/burdock\\/v2\\"
+          },
+          {
+            "term": "webgl",
+            "snippet": "(\"publicKeyCredential\",function(){return!!window.PublicKeyCredential}),Modernizr.addTest(\"webgl\",function(){return\"WebGLRenderingContext\"in window}),Modernizr.addAsyncTest(function(){if(Modernizr.webglextensions=!1,Modernizr."
+          },
+          {
+            "term": "fingerprint",
+            "snippet": "(e,f,c){return T(this,void 0,void 0,function(){function a(){var a,t,n=(null==(a=window.xhsFingerprintV3)?void 0:a.VERSION)||r.rE,i=j.bind(null,c);null==(t=window.xhsFingerprintV3)||t.getV18(function(){for(var c=[],a=0;a<arguments.l"
+          },
+          {
+            "term": "bot",
+            "snippet": "izr.addTest(\"bgpositionshorthand\",function(){var e=createElement(\"a\").style,f=\"right 10px bottom 10px\";return e.cssText=\"background-position: \"+f+\";\",e.backgroundPosition===f}),Modernizr.addTest(\"bgpositionxy\",function(){re"
+          },
+          {
+            "term": "risk",
+            "snippet": ":return A.trys.push([1,3,,4]),[4,(0,d.V3)({verifyBiz:null==c?void 0:c.status,verifyUuid:x.riskuuid,verifyType:x.verifytype,verifyStatus:!1,repeatVerify:!1},\"not_match_verify_type_code_\".concat(null==(n=null==c?void 0:c.data)"
+          },
+          {
+            "term": "captcha",
+            "snippet": "vacy\",\"/privacy/teenager\"],L=\"/api/sec/v1/scripting\",N=\"/api/sec/v1/sbtsource\",D=\"/api/redcaptcha/v2/getconfig\",H=\"scriptingEval\",j=\"sdt_source_storage_key\",z=\"sdt_source_init\",V=\"last_tiga_update_time\",q=\"sign_lack_info\",F=[\"f"
+          },
+          {
+            "term": "verify",
+            "snippet": "\",300015:\"浏览器异常，请尝试更换浏览器后重试\"},G=!a.Ay.isBrowser,W=\"infra_sec_web_api_walify\",X=\"infra_sec_verify_walify\",J=\"infra_sec_spam_walify\",Y=[],K=\"sg\"===function(){return!G&&(null==window?void 0:window.location.host.includes(\"rednote."
+          },
+          {
+            "term": "xsec",
+            "snippet": "=\"b1b1\",u=\"a1\",s=\"webId\",_=\"gid\",l=\"b1\",p=\"p1\",h=\"sc\",v=\"websectiga\",m=\"sec_poison_id\",g=\"xsecappid\",A=\"xsecappvers\",y=\"xsecplatform\",w=\"loadts\",T=\"src_loaded\",E=\"dssts\",k=\"dsllt\",S=0,I=1,B=2,C=3,R=1e3,P=1001,O=1002,M=[\"/t.x"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/project-publish-components.28977ba1.js",
+        "hits": [
+          "canvas",
+          "webgl",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": " console.error(\"下载图片失败:\",i=l.sent()),i;case 4:return[2]}})})()},aV=function(e){var t=e.getCanvas();t&&(t.renderOneFrame(0),nD.emit(\"Render\",void 0))},aB=function(e){var t=e.getCanvas();if(void 0!=t){for(var n=t.getLayerCount()"
+          },
+          {
+            "term": "webgl",
+            "snippet": "ady\",void 0),!(o=document.getElementById(\"zeusGL\"))))return[2];return o.addEventListener(\"webglcontextlost\",z,!1),nD.on(\"PickLayer\",function(e){var t=e.layerId,n=e.index,a=oI(r,t);a&&L(a,n)}),nD.on(\"OpenLoading\",function(){T."
+          },
+          {
+            "term": "bot",
+            "snippet": "nfo\",\"size\"])}),64))])]),a[1]||(a[1]=(0,A.createElementVNode)(\"img\",{src:ep,alt:\"\",class:\"bottom\"},null,-1))])}}}),eB=w()(eV,[[\"__scopeId\",\"data-v-93cdd416\"]]),eT=n(70991),eR=(0,A.defineComponent)({__name:\"Index\",props:{vis"
+          },
+          {
+            "term": "a1",
+            "snippet": "of performance.mark&&performance.mark(\"start_resource/js/project-publish-components.28977ba1.js\")}catch(e){}\"use strict\";(self.webpackChunkugc=self.webpackChunkugc||[]).push([[\"3518\"],{91078:function(e,t,n){n.r(t)},88435:f"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-vue.a92b4b21.js",
+        "hits": [
+          "canvas",
+          "bot"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "agName)return!1;if(\"width\"===t||\"height\"===t){let t=e.tagName;if(\"IMG\"===t||\"VIDEO\"===t||\"CANVAS\"===t||\"SOURCE\"===t)return!1}return!(iV(t)&&(0,y.Kg)(n))&&t in e}(e,t,r,o))?e._isVueCE&&(/[A-Z]/.test(t)||!(0,y.Kg)(r))?iN(e,(0,y."
+          },
+          {
+            "term": "bot",
+            "snippet": "ct(),t();break}},e);return n(e=>{if(e instanceof Element){if(function(e){let{top:t,left:n,bottom:r,right:l}=e.getBoundingClientRect(),{innerHeight:i,innerWidth:o}=window;return(t>0&&t<i||r>0&&r<i)&&(n>0&&n<o||l>0&&l<o)}(e))"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-zeus-engine.7e851108.js",
+        "hits": [
+          "navigator.languages",
+          "canvas",
+          "webgl",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "navigator.languages",
+            "snippet": "GNAME:\"web_user\",PATH:\"/\",PWD:\"/\",HOME:\"/home/web_user\",LANG:(\"object\"==typeof navigator&&navigator.languages&&navigator.languages[0]||\"C\").replace(\"-\",\"_\")+\".UTF-8\",_:j||\"./this.program\"};for(var t in n7)void 0===n7[t]?delete e[t]:e[t]=n7"
+          },
+          {
+            "term": "canvas",
+            "snippet": "s:[],framebuffers:[],renderbuffers:[],textures:[],shaders:[],vaos:[],contexts:[],offscreenCanvases:{},queries:[],samplers:[],transformFeedbacks:[],syncs:[],byteSizeByTypeRoot:5120,byteSizeByType:[1,1,2,2,4,4,4,2,3,4,8],stringC"
+          },
+          {
+            "term": "webgl",
+            "snippet": "te()-1},tq=function(){return 0x80000000},tY=function(e){return!!(e.dibvbi=e.getExtension(\"WEBGL_draw_instanced_base_vertex_base_instance\"))},tK=function(e){return!!(e.mdibvbi=e.getExtension(\"WEBGL_multi_draw_instanced_base_ve"
+          },
+          {
+            "term": "bot",
+            "snippet": "bly.RuntimeError(e);throw i(r),r}function et(e){if(e==b&&u)return new Uint8Array(u);throw\"both async and sync fetching of the wasm failed\"}function er(e,t,r){return(!u?a(e).then(function(e){return new Uint8Array(e)},functio"
+          },
+          {
+            "term": "a1",
+            "snippet": "F\\u2660\\u2663\\u2665\\u2666\\u2668\\u267B\\u267E\\u267F\\u2692-\\u2697\\u2699\\u269B\\u269C\\u26A0\\u26A1\\u26A7\\u26AA\\u26AB\\u26B0\\u26B1\\u26BD\\u26BE\\u26C4\\u26C5\\u26C8\\u26CE\\u26CF\\u26D1\\u26D3\\u26D4\\u26E9\\u26EA\\u26F0-\\u26F5\\u26F7-\\u26FA\\u"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-protobuf.732a53b1.js",
+        "hits": [
+          "HeadlessChrome",
+          "canvas",
+          "verify"
+        ],
+        "snippets": [
+          {
+            "term": "HeadlessChrome",
+            "snippet": "r.isEdgeChromium()?e([\"Edg\"]):goog.labs.userAgent.browser.isChrome()?e([\"Chrome\",\"CriOS\",\"HeadlessChrome\"]):(t=t[2])&&t[1]||\"\"},goog.labs.userAgent.browser.isVersionOrHigher=function(e){return 0<=goog.string.internal.compareVersions(g"
+          },
+          {
+            "term": "canvas",
+            "snippet": "g.dom.asserts.assertIsElementType_(e,\"HTMLTextAreaElement\")},goog.dom.asserts.assertIsHTMLCanvasElement=function(e){return goog.dom.asserts.assertIsElementType_(e,\"HTMLCanvasElement\")},goog.dom.asserts.assertIsHTMLEmbedElement"
+          },
+          {
+            "term": "verify",
+            "snippet": "0,SVG:!0,TEMPLATE:!0},goog.html.SafeHtml.create=function(e,t,r){return goog.html.SafeHtml.verifyTagName(String(e)),goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse(String(e),t,r)},goog.html.SafeHtml.verifyT"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-swiper.a9926d11.js",
+        "hits": [
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "bot",
+            "snippet": "(\"padding-right\")||0,10),t=t-parseInt(i.css(\"padding-top\")||0,10)-parseInt(i.css(\"padding-bottom\")||0,10),Number.isNaN(e)&&(e=0),Number.isNaN(t)&&(t=0),Object.assign(this,{width:e,height:t,size:this.isHorizontal()?e:t}))},u"
+          },
+          {
+            "term": "a1",
+            "snippet": "\",\"wrapperClass\",\"runCallbacksOnInit\",\"observer\",\"observeParents\",\"observeSlideChildren\",\"a11y\",\"_autoplay\",\"_controller\",\"coverflowEffect\",\"cubeEffect\",\"fadeEffect\",\"flipEffect\",\"creativeEffect\",\"cardsEffect\",\"hashNavigat"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-onnxruntime.8374a9e3.js",
+        "hits": [
+          "navigator.languages",
+          "hardwareConcurrency",
+          "canvas",
+          "webgl",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "navigator.languages",
+            "snippet": "GNAME:\"web_user\",PATH:\"/\",PWD:\"/\",HOME:\"/home/web_user\",LANG:(\"object\"==typeof navigator&&navigator.languages&&navigator.languages[0]||\"C\").replace(\"-\",\"_\")+\".UTF-8\",_:\"./this.program\"};for(t in rN)void 0===rN[t]?delete r[t]:r[t]=rN[t];var"
+          },
+          {
+            "term": "hardwareConcurrency",
+            "snippet": "))}var rS=()=>{throw eo+=1,\"unwind\"};function rk(){return 0xffff0000}var rT=()=>navigator.hardwareConcurrency;function rC(){return Y(\"Cannot use emscripten_pc_get_function without -sUSE_OFFSET_CONVERTER\"),0}function rI(t){t>>>=0;var r=D()."
+          },
+          {
+            "term": "canvas",
+            "snippet": "),h=c}),Q=q(()=>{\"use strict\";f=(t,r)=>{let i=\"u\">typeof document?document.createElement(\"canvas\"):new OffscreenCanvas(1,1);i.width=t.dims[3],i.height=t.dims[2];let a=i.getContext(\"2d\");if(null!=a){let n,s;r?.tensorLayout!==vo"
+          },
+          {
+            "term": "webgl",
+            "snippet": "rict\";d=\"1.21.0\"}),F=q(()=>{\"use strict\";j(),p=\"warning\",Object.defineProperty(c={wasm:{},webgl:{},webgpu:{},versions:{common:d},set logLevel(e){if(void 0!==e){if(\"string\"!=typeof e||-1===[\"verbose\",\"info\",\"warning\",\"error\",\""
+          },
+          {
+            "term": "bot",
+            "snippet": "wait p(t);return new Uint8Array(r)}catch{}if(t==K&&R)t=new Uint8Array(R);else{if(!c)throw\"both async and sync fetching of the wasm failed\";t=c(t)}return t}(t);return await WebAssembly.instantiate(i,r)}catch(t){b(`failed to "
+          },
+          {
+            "term": "a1",
+            "snippet": "ak,aT,aC,aI,aE,az,aA,aO,aR,aB,aN,aM,aD,aP,aU,aW,aq,aL,aV,aG,aH,aj,aF,aK,aQ,aZ,aX,aY,aJ,a0,a1,a2,a3,a4,a6,a8,a5,a9,a7,ne,nt,nr,ni,na=q(()=>{\"use strict\";eg=em=async function(t={}){var r,a,n=new Promise((t,i)=>{r=t,a=i}),s=\""
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-dexie.e7a1d970.js",
+        "hits": [
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "a1",
+            "snippet": "&\"function\"==typeof performance.mark&&performance.mark(\"start_resource/js/library-dexie.e7a1d970.js\")}catch(e){}(self.webpackChunkugc=self.webpackChunkugc||[]).push([[\"7535\"],{50183:function(e,t,n){e.exports=function(){\"us"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-cropper.8fc0505c.js",
+        "hits": [
+          "canvas"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "e|w|s|n|se|sw|ne|nw|all|crop|move|zoom$/,P=/^data:/,I=/^data:image\\/jpeg;base64,/,U=/^img|canvas$/i,q={viewMode:0,dragMode:D,initialAspectRatio:NaN,aspectRatio:NaN,data:null,preview:\"\",responsive:!0,restore:!0,checkCrossOrigin"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/4325.c9d005ff.js",
+        "hits": [
+          "navigator.languages",
+          "hardwareConcurrency",
+          "deviceMemory",
+          "canvas",
+          "bot",
+          "risk",
+          "captcha",
+          "verify",
+          "a1",
+          "scripting",
+          "sbtsource",
+          "shield",
+          "webprofile"
+        ],
+        "snippets": [
+          {
+            "term": "navigator.languages",
+            "snippet": "GNAME:\"web_user\",PATH:\"/\",PWD:\"/\",HOME:\"/home/web_user\",LANG:(\"object\"==typeof navigator&&navigator.languages&&navigator.languages[0]||\"C\").replace(\"-\",\"_\")+\".UTF-8\",_:tJ()};for(var t in tK)void 0===tK[t]?delete e[t]:e[t]=tK[t];var n=[];fo"
+          },
+          {
+            "term": "hardwareConcurrency",
+            "snippet": "sVisable:1},eb=function(){var e,t,n=eg()?null==(t=window)||null==(e=t.navigator)?void 0:e.hardwareConcurrency:0;return n?n>12?et:n>6?ee:Q:X},ex=function(){return eC.isVisable},e_=function(e){eC.isVisable=e},ek=function(){return ey.isFirstS"
+          },
+          {
+            "term": "deviceMemory",
+            "snippet": "unction(){var e,t;return{cpuCores:null==(e=window.navigator)?void 0:e.hardwareConcurrency,deviceMemory:null==(t=window.navigator)?void 0:t.deviceMemory}};n(64411);var sY=function(e){var t=(null==e?void 0:e.style)||{};try{t=window.ge"
+          },
+          {
+            "term": "canvas",
+            "snippet": "(e){a(e)}})}try{let r=i.create(n,o);a(null,e(r,t,o))}catch(e){a(e)}}t.create=i.create,t.toCanvas=s.bind(null,o.render),t.toDataURL=s.bind(null,o.renderToDataURL),t.toString=s.bind(null,function(e,t,n){return a.render(e,n)})},1"
+          },
+          {
+            "term": "bot",
+            "snippet": "+(f&&c?c.offsetTop:0))/l,p=i.width/o,v=i.height/l;return{width:p,height:v,top:h,right:d+p,bottom:h+v,left:d,x:d,y:h}}function f(e){var t=(0,s.A)(e);return{scrollLeft:t.pageXOffset,scrollTop:t.pageYOffset}}function d(e){retu"
+          },
+          {
+            "term": "risk",
+            "snippet": "\",ey=\"FULLWIDTHLESSTHAN\",eC=\"FULLWIDTHGREATERTHAN\",eb=\"AMPERSAND\",ex=\"APOSTROPHE\",e_=\"ASTERISK\",ek=\"AT\",eM=\"BACKSLASH\",eS=\"BACKTICK\",eL=\"CARET\",eE=\"COLON\",eT=\"COMMA\",eA=\"DOLLAR\",eO=\"DOT\",eH=\"EQUALS\",eV=\"EXCLAMATION\",ez=\"HYPH"
+          },
+          {
+            "term": "captcha",
+            "snippet": "ifyCompleted=\"realNameVerifyCompleted\",e.RealNameVerifyResult=\"realNameVerifyResult\",e.RedCAPTCHAVerifySuccess=\"red_captcha_verify_success\",e.RefreshCouponInfo=\"refresh_coupon_info\",e.RefreshNewCurationPage=\"refresh_new_curatio"
+          },
+          {
+            "term": "verify",
+            "snippet": "ccountDidSwitch=\"accountDidSwitch\",e.AccountUpdateAction=\"account_update_action\",e.AccountVerifyRestoredNormal=\"accountVerifyRestoredNormal\",e.AddPostTopic=\"addPostTopic\",e.AddressNumberProtect=\"address_number_protect\",e.Bludg"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-cos-sdk.71ed67a9.js",
+        "hits": [
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "a1",
+            "snippet": "init(e,r).finalize(t)}}}),h=n.algo={},n);g=(k=x.lib).WordArray,m=k.Hasher,y=[],k=x.algo.SHA1=m.extend({_doReset:function(){this._hash=new g.init([0x67452301,0xefcdab89,0x98badcfe,0x10325476,0xc3d2e1f0])},_doProcessBlock:fu"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/library-draggable.f898f6ca.js",
+        "hits": [
+          "canvas",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "area\",\"article\",\"aside\",\"audio\",\"b\",\"base\",\"bdi\",\"bdo\",\"blockquote\",\"body\",\"br\",\"button\",\"canvas\",\"caption\",\"cite\",\"code\",\"col\",\"colgroup\",\"data\",\"datalist\",\"dd\",\"del\",\"details\",\"dfn\",\"dialog\",\"div\",\"dl\",\"dt\",\"em\",\"embed\",\"fie"
+          },
+          {
+            "term": "bot",
+            "snippet": "w){if(t!==window&&t.parentNode&&t!==_()?(a=(i=t.getBoundingClientRect()).top,c=i.left,l=i.bottom,s=i.right,f=i.height,d=i.width):(a=0,c=0,l=window.innerHeight,s=window.innerWidth,f=window.innerHeight,d=window.innerWidth),(e"
+          },
+          {
+            "term": "a1",
+            "snippet": "xports=o&&+o},\"342f\":function(t,e,n){t.exports=n(\"d066\")(\"navigator\",\"userAgent\")||\"\"},\"35a1\":function(t,e,n){var r=n(\"f5df\"),o=n(\"3f8c\"),i=n(\"b622\")(\"iterator\");t.exports=function(t){if(void 0!=t)return t[i]||t[\"@@iterato"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/mp4box.1a4d8cdf.js",
+        "hits": [
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "a1",
+            "snippet": "unction e(){return rq._(this,e),rj._(this,e,arguments)}return r1._(e,t),e}(nM)).fourcc=\"mha1\",tJ),a_=((tQ=function(t){\"use strict\";function e(){return rq._(this,e),rj._(this,e,arguments)}return r1._(e,t),e}(nM)).fourcc=\"mh"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/index.8e3ea249.js",
+        "hits": [
+          "hardwareConcurrency",
+          "canvas",
+          "fingerprint",
+          "bot",
+          "captcha",
+          "verify",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "hardwareConcurrency",
+            "snippet": "ction E(){return\"findLast\"in Array.prototype}function k(){var e;return null!=(e=navigator.hardwareConcurrency)?e:0}var y=function(){return void 0!==window.WebAssembly},L=function(){return void 0!==window.SharedArrayBuffer},I=function(){fun"
+          },
+          {
+            "term": "canvas",
+            "snippet": "fined\"!=typeof VideoDecoder&&\"undefined\"!=typeof VideoFrame&&\"undefined\"!=typeof OffscreenCanvas&&\"undefined\"!=typeof EncodedVideoChunk},d.reportProbeResult=function(e){try{var t;null==(t=window)||null==(t=t.eaglet)||null==t.p"
+          },
+          {
+            "term": "fingerprint",
+            "snippet": "}})}).apply(this,arguments)}function f(e,t){return s(\"LOGIN\",(0,i._)((0,o._)({},e),{deviceFingerprint:t}))}function m(){return localStorage.removeItem(\"USER_INFO\"),localStorage.removeItem(\"USER_INFO_FOR_BIZ\"),d(\"LOGOUT\")}},56760:fu"
+          },
+          {
+            "term": "bot",
+            "snippet": "upported(v);case 4:if(!e.v.supported){e.n=5;break}return A=C!==c,E=\"none\",(w=h!==t)&&A?E=\"both\":w?E=\"codec\":A&&(E=\"acceleration\"),this.reportProbeResult({originalCodec:t,finalCodec:h,originalAcceleration:c,finalAcceleration"
+          },
+          {
+            "term": "captcha",
+            "snippet": "(0,v._)({carryDeviceInfo:!1,callFrom:\"creator-platform\",process461Response:!0,includes:[],captchaOption:{\"z-index\":9999},captchaInCurrent:!0})),tf.use(g.A,{appId:\"creator-platform\",loadCore:function(){return n.e(\"6391\").then(n."
+          },
+          {
+            "term": "verify",
+            "snippet": "n/studio/settlement/relation\"),STUDIO_APPLY:\"\".concat(l).concat(d,\"sign/apply/terminate\"),VERIFY_APPLY:\"\".concat(l).concat(d,\"v2/creator/mcn/sign/verify_apply\"),BALANCE_TRANSFER_LIST:\"\".concat(l).concat(d,\"v2/creator/mcn/coope"
+          },
+          {
+            "term": "a1",
+            "snippet": "oBlobURL(\"https://fe-video-qc.xhscdn.com/fe-platform/dfde0fb0c03b132ed1646b1ca7aa3bf42cb6ba1d/ffmpeg-core.worker.js?attname=fe-platform/dfde0fb0c03b132ed1646b1ca7aa3bf42cb6ba1d/ffmpeg-core.worker.js.js\",\"application/javasc"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-video-qc.xhscdn.com/fe-platform/abf6e0874371419fa6fffa7540610e2013588fe6/html2canvas.min.js",
+        "hits": [
+          "canvas",
+          "webgl",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "/*! * html2canvas 1.4.1 <https://html2canvas.hertzen.com> * Copyright (c) 2023 Niklas von Hertzen <https://hertzen.com> * Released under MIT Lice"
+          },
+          {
+            "term": "webgl",
+            "snippet": "&&n?s.putImageData(n.getImageData(0,0,e.width,e.height),0,0):(!(r=null!==(A=e.getContext(\"webgl2\"))&&void 0!==A?A:e.getContext(\"webgl\"))||!1===(null==(B=r.getContextAttributes())?void 0:B.preserveDrawingBuffer)&&this.context."
+          },
+          {
+            "term": "bot",
+            "snippet": "t)}function se(A){switch(A.filter(_A).map(function(A){return A.value}).join(\" \")){case\"to bottom right\":case\"to right bottom\":case\"left top\":case\"top left\":return[ae,ae];case\"to top\":case\"bottom\":return Ce(0);case\"to bottom"
+          },
+          {
+            "term": "a1",
+            "snippet": "KJApECmQKgAqgCsAK4ArwCxAIwAMwC0wLbAjAA4wLrAvMC+AIAAwcDDwMwABcDHQMlAy0DNQN1AD0DQQNJA0kDSQNRA1EDVwNZA1kDdQB1AGEDdQBpA20DdQN1AHsDdQCBA4kDkQN1AHUAmQOhA3UAdQB1AHUAdQB1AHUAdQB1AHUAdQB1AHUAdQB1AHUAdQB1AKYDrgN1AHUAtgO+A8YDzgPWAxcD"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/async/6391.81c30119.js",
+        "hits": [
+          "webgl",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "webgl",
+            "snippet": "val\",38033,38097,38485,38502,38503,38516,39082,39200,39367,39375,39520,39633,39755,39815,\"WebGLRenderingContext\",40395,41104,41758,41902,41903,41967,41968,42086,42087,42235,42236,42283,42284,42309,320,41105,41193,368,41238,41"
+          },
+          {
+            "term": "a1",
+            "snippet": "BBx8JAgEHKhoEGAIBQQQbAgEuAQEBAy0H3pMBBDYBCQEKIwQmAQQaBBgEG0IEJgIBLgEDAQkjBAMBChoEJgdbJQIBBA1CBAMCAS4BCAEDIwRRAQIaBCYHSSUCAQQFQgRRAgEuAQQBBCMEHwEFGgQmB8WrJQIBBA5CBB8CAS4BAgEEIwQSAQcaBCYHxrJCBBICAS4BBgEFCQciBzMJAgEHJwkCAQcdC"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/as/v1/f218/a15/public/04b29480233f4def5c875875b6bdc3b1.js",
+        "hits": [
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "bot",
+            "snippet": "CAIRx','aWnAt','cpCMA','OnMGv','hdknk','TTovn','KUUmx','EzMUj','UAxYO','jLPLW','dkURU','PeBoT','pwCMN','Dqhsm','mLdtv','pop','prARE','yxPlO','eQyOa','lpvyz','amxpY','splice','GsOkE','PRBMM','UWhoM','cHsfP','10885809FSYohG',"
+          },
+          {
+            "term": "a1",
+            "snippet": "ar Oe=XT;return s[Oe(eS.s)](R,x,z,I,P);},'doPIC':function(R,x,z){var Ou=XT;return s[Ou(0x1a1)](R,x,z);},'tbSOT':function(R,x,z){return s['didfw'](R,x,z);},'FvaUk':function(R,x,z,I,P){var OA=XT;return s[OA(0x292)](R,x,z,I,P"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/as/v2/fp/643f48183a62c46e6c924b3f0456767a.js",
+        "hits": [
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "a1",
+            "snippet": "3c0a4e[_0x5ea8a9];return _0x9c895d;};return _0x1d86(_0x14cee2,_0x3ab2ad);}(function(_0x4b4a15,_0x3a5108){var _0x5b0569={_0x4f7cc9:0x269,_0x3cb7a2:0x23e};var _0x11e653=_0x1d86;var _0x582fd0=_0x4b4a15();while(!![]){try{var _"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/async/5227.4baa7afc.js",
+        "hits": [
+          "canvas",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "return{value:e.id,label:e.name,extra:{icon:e.url}}}),[2]}})})()}),{templateData:e,reRenderCanvas:a,removeActiveObj:i,canvasToDataURL:r,fontIdOptions:t,textImgConfig:n,active:l,fontColorList:[\"#ffffff\",\"#666666\",\"#000000\",\"#FFE"
+          },
+          {
+            "term": "bot",
+            "snippet": "toLowerCase(),tab_id:\"GOODS_SELLER_SAMPLE\"===t.goodsSellerType?6:1,image_type:\"spec\",left_bottom_type:\"BUY_GOODS\",bind_order:n},{bizType:\"GOODS_SELLER_V2\",bizId:t.skuId,extraInfo:m(o)}))}),(null==t?void 0:t.length)>0?o.valu"
+          },
+          {
+            "term": "a1",
+            "snippet": "6D1\",\"#FF8092\",\"#F41C4F\",\"#F20F30\",\"#FA584B\",\"#DF9898\",\"#FFE1CC\",\"#FFCDB3\",\"#FFB580\",\"#FF8A1E\",\"#FC7100\",\"#F49A38\",\"#DDA57D\",\"#F8F4E3\",\"#FFE49E\",\"#FFE55C\",\"#FFC715\",\"#FCB400\",\"#F7CA5C\",\"#FFF59E\",\"#DDFAD0\",\"#CFFFC2\",\"#B5F77"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-video-qc.xhscdn.com/fe-platform-file/104101b83203nt9iriq06ircja8jp60000000004v8odjg",
+        "hits": [
+          "canvas",
+          "bot",
+          "risk",
+          "captcha",
+          "verify",
+          "xsec",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "canvas",
+            "snippet": "t === \"height\") { const i = e.tagName; if (i === \"IMG\" || i === \"VIDEO\" || i === \"CANVAS\" || i === \"SOURCE\") return !1; } return ma(t) && kt(n) ? !1 : t in e; } function C1(e, t) { const n = ( // @ts-ex"
+          },
+          {
+            "term": "bot",
+            "snippet": "in-top:12px}.m-16{margin:16px}.mt-16{margin-top:16px}.mt-36{margin-top:36px}.mb-12{margin-bottom:12px}.mb-16{margin-bottom:16px}.mb-36{margin-bottom:36px}.visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;p"
+          },
+          {
+            "term": "risk",
+            "snippet": " ...e ? { verifyUuid: e } : {} })).data; } const n = new Yf({ bizName: \"risk\", scene: \"qrcodeverify_feedback\", getToken: t }); function r({ onSuccess: i, onProgress: o, file: s, "
+          },
+          {
+            "term": "captcha",
+            "snippet": "ng: rgba(231, 34, 61, 1);--color-bg-Button-Primary-disabled: rgba(255, 255, 255, .08)}.fe-captcha-app{--background-color: white;--text-color: #000000D9;--label-color: #000000B2;--border-color: #eee;--btn-text-color: #000000D9;-"
+          },
+          {
+            "term": "verify",
+            "snippet": " }[e]; } function j1(e) { e && (Zc = e); } function wa() { return Zc; } window.__setVerifyMsgBase64__ = j1; function ti(e) { return (e == null ? void 0 : e.verifyUuid) ?? Rr(\"verifyUuid\") ?? Rr(\"uuid\"); } function H1()"
+          },
+          {
+            "term": "xsec",
+            "snippet": "Biz: \"461\", verifyType: \"102\", sourceSite: \"\", platform: \"\", projectId: B.xsecappid, deviceId: \"\", appVersion: \"\", isNative: !1, http: new K(), env: \"\", webId: B.webId, gid: B.gid,"
+          },
+          {
+            "term": "a1",
+            "snippet": "near infinite}@keyframes spin-d5003260{to{transform:rotate(360deg)}}.captcha-modal[data-v-a19f0473]{position:fixed;display:flex;justify-content:center;align-items:center;width:100vw;height:100vh;z-index:10000000;left:0;rig"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-video-qc.xhscdn.com/fe-platform/9126fc5af088fabf9b38021009055b10e3356909/ffmpeg-core.js?attname=fe-platform/9126fc5af088fabf9b38021009055b10e3356909/ffmpeg-core.js.js",
+        "hits": [
+          "navigator.languages",
+          "bot",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "navigator.languages",
+            "snippet": "function getEnvStrings(){if(!getEnvStrings.strings){var lang=(typeof navigator==\"object\"&&navigator.languages&&navigator.languages[0]||\"C\").replace(\"-\",\"_\")+\".UTF-8\";var env={\"USER\":\"web_user\",\"LOGNAME\":\"web_user\",\"PATH\":\"/\",\"PWD\":\"/\",\"HOM"
+          },
+          {
+            "term": "bot",
+            "snippet": "asmBinary){return new Uint8Array(wasmBinary)}if(readBinary){return readBinary(file)}throw\"both async and sync fetching of the wasm failed\"}catch(err){abort(err)}}function getBinaryPromise(binaryFile){if(!wasmBinary&&(ENVIRO"
+          },
+          {
+            "term": "a1",
+            "snippet": "s\"]=6059629;var ___stop_em_js=Module[\"___stop_em_js\"]=6059806;function invoke_iiiii(index,a1,a2,a3,a4){var sp=stackSave();try{return getWasmTableEntry(index)(a1,a2,a3,a4)}catch(e){stackRestore(sp);if(e!==e+0)throw e;_setTh"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/async/library-xgplayer.ef22d83e.js",
+        "hits": [
+          "hardwareConcurrency",
+          "canvas",
+          "webgl",
+          "bot",
+          "risk",
+          "a1"
+        ],
+        "snippets": [
+          {
+            "term": "hardwareConcurrency",
+            "snippet": "cancel_cnt=f)}}if(\"undefined\"!=typeof navigator&&(o.hardware_concurrency=Number(navigator.hardwareConcurrency)),this.renderInfo&&(o.render_info=this.renderInfo),this.cmse){var x=this.cmse.getStat(),m=x.workerCost,v=x.receiveDataCost,k=x.vi"
+          },
+          {
+            "term": "canvas",
+            "snippet": "nction(){return!!r},getRenderInfo:function(){if(null==r)try{var e=document.createElement(\"canvas\"),t=e.getContext(\"webgl\")||e.getContext(\"experimental-webgl\"),i=t.getExtension(\"WEBGL_debug_renderer_info\");r=(r=t.getParameter(i"
+          },
+          {
+            "term": "webgl",
+            "snippet": "nderInfo:function(){if(null==r)try{var e=document.createElement(\"canvas\"),t=e.getContext(\"webgl\")||e.getContext(\"experimental-webgl\"),i=t.getExtension(\"WEBGL_debug_renderer_info\");r=(r=t.getParameter(i.UNMASKED_RENDERER_WEBGL"
+          },
+          {
+            "term": "bot",
+            "snippet": "efore(t,a.nextSibling):i.appendChild(t):i.insertBefore(t,i.firstChild),c.push(t);else if(\"bottom\"===e.insertAt)i.appendChild(t);else{if(\"object\"!=typeof e.insertAt||!e.insertAt.before)throw Error(\"[Style Loader]\\n\\n Invalid"
+          },
+          {
+            "term": "risk",
+            "snippet": "le[\"max-width\"]=\"100%\"),i.root.style.width=\"100%\",i.root.style.height=\"100%\",i.config.useOriSkin&&!i.config.fakescreen&&(i.root.style.height=\"0\",i.root.style[\"padding-top\"]=100*i.config.height/i.config.width+\"%\"),i.video.sty"
+          },
+          {
+            "term": "a1",
+            "snippet": ".xgplayer-progress-played{display:block;width:0;background-image:linear-gradient(-90deg,#fa1f41,#e31106);border-radius:0 1.5px 1.5px 0}.xgplayer-skin-default-ori .xgplayer-progress-btn{display:none;position:absolute;left:0"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/async/9995.150c37f6.js",
+        "hits": [
+          "bot"
+        ],
+        "snippets": [
+          {
+            "term": "bot",
+            "snippet": "eight-parseInt(e.getPropertyValue(\"padding-top\"),10)-parseInt(e.getPropertyValue(\"padding-bottom\"),10)}(t),!l||!n.widthOnly&&!o)if(n.widthOnly)throw Error(\"Set a static width on the target element \"+t.outerHTML+\" before usi"
+          }
+        ]
+      },
+      {
+        "url": "https://fe-static.xhscdn.com/formula-static/ugc/public/resource/js/async/632.a8054f18.js",
+        "hits": [
+          "bot"
+        ],
+        "snippets": [
+          {
+            "term": "bot",
+            "snippet": ",d;if(e!==window&&e.parentNode&&e!==B()?(a=(i=e.getBoundingClientRect()).top,l=i.left,s=i.bottom,c=i.right,u=i.height,d=i.width):(a=0,l=0,s=window.innerHeight,c=window.innerWidth,u=window.innerHeight,d=window.innerWidth),(t"
+          }
+        ]
+      }
+    ],
+    "console_hits": [],
+    "visible_text_sample": "遇到问题\n创作服务平台\n芊芊\n发布笔记\n首页\n笔记管理\n数据看板\n活动中心\n笔记灵感\n创作学院\n创作百科\n收起侧边栏\n上传视频\n上传视频\n上传图文\n上传图文\n上传图文\n写长文\n写长文\n发播客\n发播客\n草稿箱(0)\n\n上传图片，或写文字生成图片\n\n上传图片\n文字配图\n\n图片大小\n\n支持上传的图片大小，\n\n最大32MB的图片文件\n\n图片格式\n\n支持上传的图片格式，\n\n推荐使用png、jpg、jpeg、webp，不支持gif、live及其转化后的图片\n\n图片分辨率\n\n不限制宽高比例，推荐上传3:4至2:1之间、分辨率不低于720*960的照片，\n\n超过1280P的图片用网页端上传画质更清晰"
+  }
+]

@@ -62,7 +62,7 @@ class BrowserCliParserTests(unittest.TestCase):
         self.assertEqual(args.title, "图文标题")
         self.assertEqual(args.note, "图文正文")
 
-    def test_xiaohongshu_upload_video_defaults_to_headless(self):
+    def test_xiaohongshu_upload_video_defaults_to_headed(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "demo.mp4"
             video_path.write_bytes(b"video")
@@ -83,10 +83,10 @@ class BrowserCliParserTests(unittest.TestCase):
                 ]
             )
 
-        self.assertTrue(args.headless)
+        self.assertFalse(args.headless)
         self.assertEqual(args.group_chat, "手作交流群")
 
-    def test_xiaohongshu_upload_note_accepts_headed(self):
+    def test_xiaohongshu_upload_note_accepts_headless(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             image_path = Path(tmp_dir) / "1.png"
             image_path.write_bytes(b"image")
@@ -104,11 +104,11 @@ class BrowserCliParserTests(unittest.TestCase):
                     "图文标题",
                     "--note",
                     "图文正文",
-                    "--headed",
+                    "--headless",
                 ]
             )
 
-        self.assertFalse(args.headless)
+        self.assertTrue(args.headless)
 
 
 class BrowserCliDispatchTests(unittest.TestCase):
@@ -162,7 +162,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.group_chat, "手作交流群")
         self.assertFalse(request.headless)
 
-    def test_dispatch_xiaohongshu_upload_note_uses_headless_request(self):
+    def test_dispatch_xiaohongshu_upload_note_uses_default_headed_request(self):
         args = Namespace(
             platform="xiaohongshu",
             action="upload-note",
@@ -174,7 +174,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             schedule=0,
             group_chat="图文群",
             debug=False,
-            headless=True,
+            headless=False,
         )
         with patch("sau_cli.upload_xiaohongshu_note", new=AsyncMock()) as mock_upload:
             asyncio.run(sau_cli.dispatch(args))
@@ -183,8 +183,68 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.title, "图文标题")
         self.assertEqual(request.note, "图文正文")
         self.assertEqual(request.group_chat, "图文群")
-        self.assertTrue(request.headless)
+        self.assertFalse(request.headless)
         self.assertEqual(len(request.image_files), 2)
+
+    def test_xiaohongshu_video_upload_does_not_open_cookie_probe_before_publish(self):
+        class FakeVideoUploader:
+            kwargs = None
+
+            def __init__(self, **kwargs):
+                FakeVideoUploader.kwargs = kwargs
+
+            async def main(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}")
+            request = sau_cli.XiaohongshuVideoUploadRequest(
+                account_name="creator",
+                video_file=Path("demo.mp4"),
+                title="视频标题",
+                description="视频简介",
+                tags=["测试"],
+                publish_date=0,
+            )
+
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.xiaohongshu_setup", new=AsyncMock()) as mock_setup:
+                    with patch("sau_cli.XiaoHongShuVideo", FakeVideoUploader):
+                        asyncio.run(sau_cli.upload_xiaohongshu_video(request))
+
+        mock_setup.assert_not_awaited()
+        self.assertTrue(FakeVideoUploader.kwargs["cookie_verified"])
+
+    def test_xiaohongshu_note_upload_does_not_open_cookie_probe_before_publish(self):
+        class FakeNoteUploader:
+            kwargs = None
+
+            def __init__(self, **kwargs):
+                FakeNoteUploader.kwargs = kwargs
+
+            async def main(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}")
+            request = sau_cli.XiaohongshuNoteUploadRequest(
+                account_name="creator",
+                image_files=[Path("demo.png")],
+                title="图文标题",
+                note="图文正文",
+                tags=["测试"],
+                publish_date=0,
+            )
+
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.xiaohongshu_setup", new=AsyncMock()) as mock_setup:
+                    with patch("sau_cli.XiaoHongShuNote", FakeNoteUploader):
+                        asyncio.run(sau_cli.upload_xiaohongshu_note(request))
+
+        mock_setup.assert_not_awaited()
+        self.assertTrue(FakeNoteUploader.kwargs["cookie_verified"])
 
 
 if __name__ == "__main__":

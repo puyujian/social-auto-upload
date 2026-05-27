@@ -25,6 +25,12 @@ DOUYIN_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
 DOUYIN_UPLOAD_URL = "https://creator.douyin.com/creator-micro/content/upload"
 DOUYIN_AUTHENTICATED_TEXTS = ("点击上传", "上传视频", "发布图文", "内容管理", "作品管理")
 DOUYIN_LOGIN_TEXTS = ("扫码登录", "验证码登录", "密码登录", "登录/注册")
+DOUYIN_DECLARATION_MODAL_TITLE = "未添加自主声明"
+DOUYIN_DECLARATION_DIRECT_PUBLISH_BUTTON = "直接发布"
+DOUYIN_DECLARATION_SELECTION_MODAL_TITLE = "对作品内容添加声明"
+DOUYIN_DECLARATION_SELECTION_OPTION = "无需添加自主声明"
+DOUYIN_DECLARATION_CONFIRM_BUTTON = "确定"
+DOUYIN_MODAL_SELECTOR = ".semi-modal-content"
 
 
 def _msg(emoji: str, text: str) -> str:
@@ -57,6 +63,28 @@ async def _has_visible_text(page: Page, text: str) -> bool:
         return False
     try:
         return await locator.is_visible()
+    except Exception:
+        return False
+
+
+async def _is_visible_locator(locator) -> bool:
+    locator = locator.first
+    try:
+        if not await locator.count():
+            return False
+        return await locator.is_visible()
+    except Exception:
+        return False
+
+
+async def _is_enabled_locator(locator) -> bool:
+    locator = locator.first
+    try:
+        if not await locator.count():
+            return False
+        if not await locator.is_visible():
+            return False
+        return await locator.is_enabled()
     except Exception:
         return False
 
@@ -298,6 +326,49 @@ class DouYinBaseUploader(BaseVideoUploader):
         await page.keyboard.type(location)
         await page.wait_for_selector('div[role="listbox"] [role="option"]', timeout=5000)
         await page.locator('div[role="listbox"] [role="option"]').first.click()
+
+    async def handle_declaration_modal(self, page: Page) -> bool:
+        if await self._handle_direct_declaration_modal(page):
+            return True
+        return await self._handle_declaration_selection_modal(page)
+
+    async def _handle_direct_declaration_modal(self, page: Page) -> bool:
+        title = page.get_by_text(DOUYIN_DECLARATION_MODAL_TITLE, exact=True)
+        button = page.get_by_role(
+            "button",
+            name=DOUYIN_DECLARATION_DIRECT_PUBLISH_BUTTON,
+            exact=True,
+        )
+        if not await _is_visible_locator(title) or not await _is_visible_locator(button):
+            return False
+
+        await button.first.click()
+        douyin_logger.info(_msg("🥳", "已确认“未添加自主声明”弹窗，继续发布"))
+        return True
+
+    async def _handle_declaration_selection_modal(self, page: Page) -> bool:
+        modal = page.locator(
+            f'{DOUYIN_MODAL_SELECTOR}:has-text("{DOUYIN_DECLARATION_SELECTION_MODAL_TITLE}")'
+        ).first
+        if not await _is_visible_locator(modal):
+            return False
+
+        option = modal.locator(f'label.semi-radio:has-text("{DOUYIN_DECLARATION_SELECTION_OPTION}")').first
+        if not await _is_visible_locator(option):
+            option = modal.get_by_text(DOUYIN_DECLARATION_SELECTION_OPTION, exact=True).first
+        if not await _is_visible_locator(option):
+            return False
+        await option.first.click()
+        confirm_button = modal.locator(
+            f'button:has-text("{DOUYIN_DECLARATION_CONFIRM_BUTTON}"):not([disabled])'
+        ).first
+        for _ in range(30):
+            if await _is_enabled_locator(confirm_button):
+                await confirm_button.first.click()
+                douyin_logger.info(_msg("🥳", "已选择“无需添加自主声明”，继续发布"))
+                return True
+            await asyncio.sleep(0.1)
+        return False
 
     async def handle_product_dialog(self, page: Page, product_title: str):
         await page.wait_for_timeout(2000)
@@ -546,10 +617,11 @@ class DouYinVideo(DouYinBaseUploader):
         if self.publish_strategy == DOUYIN_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time_douyin(page, self.publish_date)
 
+        wait_after_declaration_confirm = False
         while True:
             try:
                 publish_button = page.get_by_role("button", name="发布", exact=True)
-                if await publish_button.count():
+                if not wait_after_declaration_confirm and await publish_button.count():
                     await publish_button.click()
                 await page.wait_for_url(
                     "https://creator.douyin.com/creator-micro/content/manage**",
@@ -558,7 +630,11 @@ class DouYinVideo(DouYinBaseUploader):
                 douyin_logger.success(_msg("🥳", "视频发布成功，小人开心收工"))
                 break
             except Exception:
-                await self.handle_auto_video_cover(page)
+                if await self.handle_declaration_modal(page):
+                    wait_after_declaration_confirm = True
+                else:
+                    wait_after_declaration_confirm = False
+                    await self.handle_auto_video_cover(page)
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
                 if self.debug:
                     await page.screenshot(full_page=True)
@@ -650,10 +726,11 @@ class DouYinNote(DouYinBaseUploader):
         if self.publish_strategy == DOUYIN_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time_douyin(page, self.publish_date)
 
+        wait_after_declaration_confirm = False
         while True:
             try:
                 publish_button = page.get_by_role("button", name="发布", exact=True)
-                if await publish_button.count():
+                if not wait_after_declaration_confirm and await publish_button.count():
                     await publish_button.click()
                 await page.wait_for_url(
                     "**/creator-micro/content/manage?enter_from=publish**",
@@ -662,6 +739,7 @@ class DouYinNote(DouYinBaseUploader):
                 douyin_logger.success(_msg("🥳", "图文发布成功，小人开心收工"))
                 break
             except Exception:
+                wait_after_declaration_confirm = await self.handle_declaration_modal(page)
                 douyin_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
                 await asyncio.sleep(0.5)
 

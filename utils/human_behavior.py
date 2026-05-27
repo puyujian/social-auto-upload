@@ -949,6 +949,7 @@ class HumanBehaviorModule:
         locator=None,
         button: str = "left",
         click_count: int = 1,
+        position: Optional[dict] = None,
         timeout: Optional[float] = None,
     ) -> "HumanBehaviorModule":
         """模拟人类点击行为。"""
@@ -959,6 +960,7 @@ class HumanBehaviorModule:
             config=self.config,
             button=button,
             click_count=click_count,
+            position=position,
             timeout=timeout,
         )
         return self

@@ -486,6 +486,30 @@ class IntegrationTests(unittest.TestCase):
 
         asyncio.run(_test())
 
+    def test_module_click_accepts_explicit_position(self):
+        human = hb.HumanBehaviorModule.with_config("low")
+        human.config.click_offset_range = (0, 0)
+        page = MagicMock()
+        page.viewport_size = {"width": 1920, "height": 1080}
+        page.mouse = MagicMock()
+        page.mouse.move = AsyncMock()
+        page.mouse.click = AsyncMock()
+
+        locator = AsyncMock()
+        locator.wait_for = AsyncMock(return_value=None)
+        locator.bounding_box = AsyncMock(
+            return_value={"x": 50, "y": 60, "width": 100, "height": 40}
+        )
+
+        async def _test():
+            await human.click(page, locator=locator, position={"x": 12, "y": 18})
+
+        asyncio.run(_test())
+
+        page.mouse.click.assert_awaited_once()
+        args = page.mouse.click.await_args.args
+        self.assertEqual(args[:2], (62, 78))
+
     def test_module_type_integration(self):
         human = hb.HumanBehaviorModule.with_config("low")
         human.config.typing_mistake_probability = 0

@@ -45,11 +45,14 @@ class FakeLocator:
     async def fill(self, value):
         return None
 
-    async def click(self):
+    async def click(self, **kwargs):
         return None
 
     async def scroll_into_view_if_needed(self):
         return None
+
+    async def bounding_box(self):
+        return {"x": 0, "y": 0, "width": 240, "height": 48}
 
     async def is_visible(self):
         return True
@@ -80,14 +83,17 @@ class RecordingLocator(FakeLocator):
     async def evaluate(self, script, value):
         self.actions.append(("evaluate", value))
 
-    async def click(self):
-        self.actions.append(("click",))
+    async def click(self, **kwargs):
+        self.actions.append(("click", kwargs))
 
     async def wait_for(self, **kwargs):
         self.actions.append(("wait_for", kwargs))
 
     async def scroll_into_view_if_needed(self):
         self.actions.append(("scroll_into_view_if_needed",))
+
+    async def bounding_box(self):
+        return {"x": 0, "y": 0, "width": 240, "height": 48}
 
     async def inner_text(self):
         return self.name
@@ -97,12 +103,6 @@ class TimeoutLocator(RecordingLocator):
     async def wait_for(self, **kwargs):
         self.actions.append(("wait_for", kwargs))
         raise TimeoutError(f"{self.name} timed out")
-
-
-class NoFillLocator(RecordingLocator):
-    async def fill(self, value):
-        self.actions.append(("fill", value))
-        raise RuntimeError("not fillable")
 
 
 class GroupOptionLocator(RecordingLocator):
@@ -181,7 +181,7 @@ class RecordingHuman:
 
     async def click(self, page, selector=None, *, locator=None, timeout=None, **kwargs):
         target = locator.name if locator is not None else selector
-        self.actions.append(("click", target, timeout))
+        self.actions.append(("click", target, timeout, kwargs.get("position")))
 
     async def type(self, page, text, *, field_locator=None):
         self.actions.append(("type", text, field_locator.name if field_locator else None))
@@ -311,25 +311,30 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             page.locators['input[placeholder*="填写标题"]'].actions,
             [
                 ("wait_for", {"state": "visible", "timeout": 10000}),
-                ("fill", ""),
+                ("scroll_into_view_if_needed",),
             ],
         )
-        self.assertIn(("type", "标题内容", "title"), app.human.actions)
-        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertIn(("type", "标题内容", None), app.human.actions)
         self.assertEqual(
             page.locators['p[data-placeholder*="输入正文描述"]'].actions,
             [
-                ("scroll_into_view_if_needed",),
                 ("wait_for", {"state": "visible", "timeout": 10000}),
-                ("fill", ""),
+                ("scroll_into_view_if_needed",),
             ],
         )
-        self.assertIn(("type", "描述内容", "desc"), app.human.actions)
-        self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
-        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
-        self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
-        self.assertIn(("type", "#话题2", 30), page.keyboard.actions)
-        self.assertIn(("type", "#话题3", 30), page.keyboard.actions)
+        self.assertIn(("click", "title", 10000, None), app.human.actions)
+        self.assertIn(("click", "desc", 10000, {"x": 19.2, "y": 24.0}), app.human.actions)
+        self.assertIn(("type", "描述内容", None), app.human.actions)
+        self.assertEqual(page.keyboard.actions[:5], [
+            ("press", "Control+A"),
+            ("press", "Backspace"),
+            ("press", "Control+A"),
+            ("press", "Backspace"),
+            ("press", "Enter"),
+        ])
+        self.assertIn(("type", "#话题1", None), app.human.actions)
+        self.assertIn(("type", "#话题2", None), app.human.actions)
+        self.assertIn(("type", "#话题3", None), app.human.actions)
         self.assertEqual(
             page.locators['#creator-editor-topic-container .item'].actions,
             [
@@ -341,7 +346,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
                 ("scroll_into_view_if_needed",),
             ],
         )
-        self.assertIn(("click", "topic-item", 10000), app.human.actions)
+        self.assertIn(("click", "topic-item", 10000, None), app.human.actions)
 
     def test_video_fill_meta_can_fill_first_tag_without_desc(self):
         app = xhs_main.XiaoHongShuVideo(
@@ -356,11 +361,18 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         asyncio.run(app.fill_meta(page))
 
-        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertEqual(
+            page.locators['p[data-placeholder*="输入正文描述"]'].actions,
+            [
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("scroll_into_view_if_needed",),
+            ],
+        )
+        self.assertIn(("click", "desc", 10000, {"x": 19.2, "y": 24.0}), app.human.actions)
         self.assertNotIn(("type", "", None), app.human.actions)
-        self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+        self.assertIn(("type", "#话题1", None), app.human.actions)
 
-    def test_fill_desc_falls_back_to_dom_write_without_page_select_all(self):
+    def test_fill_desc_uses_manual_clear_and_typing(self):
         app = xhs_main.XiaoHongShuVideo(
             title="标题内容",
             file_path="demo.mp4",
@@ -371,27 +383,25 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         )
         app.human = RecordingHuman()
         page = RecordingPage()
-        page.locators['p[data-placeholder*="输入正文描述"]'] = NoFillLocator("desc")
 
         asyncio.run(app.fill_desc(page))
 
         self.assertEqual(
             page.locators['p[data-placeholder*="输入正文描述"]'].actions,
             [
-                ("scroll_into_view_if_needed",),
                 ("wait_for", {"state": "visible", "timeout": 10000}),
-                ("fill", ""),
-                ("evaluate", "描述内容"),
+                ("scroll_into_view_if_needed",),
             ],
         )
-        self.assertIn(("click", "desc", 10000), app.human.actions)
+        self.assertIn(("click", "desc", 10000, {"x": 19.2, "y": 24.0}), app.human.actions)
+        self.assertIn(("type", "描述内容", None), app.human.actions)
         self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
-        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
+        self.assertIn(("press", "Control+A"), page.keyboard.actions)
         self.assertNotIn(("press", "Delete"), page.keyboard.actions)
-        self.assertNotIn(("press", "Backspace"), page.keyboard.actions)
+        self.assertIn(("press", "Backspace"), page.keyboard.actions)
         self.assertIn(("press", "Enter"), page.keyboard.actions)
 
-    def test_set_schedule_time_uses_field_fill_without_page_select_all(self):
+    def test_set_schedule_time_uses_manual_clear_and_typing(self):
         app = xhs_main.XiaoHongShuVideo(
             title="标题内容",
             file_path="demo.mp4",
@@ -411,18 +421,19 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         with patch("uploader.xiaohongshu_uploader.main.asyncio.sleep", new=AsyncMock(return_value=None)):
             asyncio.run(app.set_schedule_time_xiaohongshu(page, datetime(2026, 5, 4, 9, 30)))
 
-        self.assertIn(("click", "schedule-switch", 10000), app.human.actions)
+        self.assertIn(("click", "schedule-switch", 10000, None), app.human.actions)
         self.assertEqual(
             page.locators[".d-datepicker-input-filter input.d-text"].actions,
             [
                 ("wait_for", {"state": "visible", "timeout": 10000}),
-                ("fill", ""),
+                ("scroll_into_view_if_needed",),
             ],
         )
-        self.assertIn(("type", "2026-05-04 09:30", "date-input"), app.human.actions)
+        self.assertIn(("type", "2026-05-04 09:30", None), app.human.actions)
         self.assertNotIn(("press", "Control+KeyA"), page.keyboard.actions)
-        self.assertNotIn(("press", "Control+A"), page.keyboard.actions)
+        self.assertIn(("press", "Control+A"), page.keyboard.actions)
         self.assertNotIn(("press", "Delete"), page.keyboard.actions)
+        self.assertIn(("press", "Backspace"), page.keyboard.actions)
 
     def test_video_fill_meta_keeps_text_tag_when_topic_suggestion_times_out(self):
         app = xhs_main.XiaoHongShuVideo(
@@ -438,7 +449,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         asyncio.run(app.fill_meta(page))
 
-        self.assertIn(("type", "#话题1", 30), page.keyboard.actions)
+        self.assertIn(("type", "#话题1", None), app.human.actions)
         self.assertIn(("press", "Enter"), page.keyboard.actions)
         self.assertEqual(page.locators['#creator-editor-topic-container .item'].actions, [])
 
@@ -468,11 +479,19 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         asyncio.run(app.set_group_chat(page, "手作交流群"))
 
-        self.assertEqual(page.input.actions, [("fill", "")])
-        self.assertIn(("click", "手作交流群", 10000), app.human.actions)
-        self.assertIn(("click", "group-input", None), app.human.actions)
+        self.assertEqual(
+            page.input.actions,
+            [
+                ("wait_for", {"state": "visible", "timeout": 10000}),
+                ("scroll_into_view_if_needed",),
+            ],
+        )
+        self.assertIn(("click", "手作交流群", 10000, None), app.human.actions)
+        self.assertIn(("click", "group-input", 10000, None), app.human.actions)
         self.assertIn(("type", "手作交流群", None), app.human.actions)
-        self.assertIn(("click", "手作交流群-container", 10000), app.human.actions)
+        self.assertIn(("press", "Control+A"), page.keyboard.actions)
+        self.assertIn(("press", "Backspace"), page.keyboard.actions)
+        self.assertIn(("click", "手作交流群-container", 10000, None), app.human.actions)
         self.assertNotIn(("click",), page.option.actions)
 
     def test_apply_human_behavior_uses_page_and_context(self):
@@ -489,7 +508,48 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         asyncio.run(app.apply_human_behavior(page, context))
 
-        self.assertEqual(app.human.actions, [("fingerprint", page, context)])
+        self.assertEqual(app.human.actions, [])
+
+    def test_build_browser_context_options_uses_stable_profile(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+
+        options = app.build_browser_context_options()
+
+        self.assertEqual(options["storage_state"], "account.json")
+        self.assertEqual(options["viewport"], {"width": 1536, "height": 864})
+        self.assertEqual(options["locale"], "zh-CN")
+        self.assertEqual(options["timezone_id"], "Asia/Shanghai")
+        self.assertEqual(options["permissions"], ["geolocation"])
+
+    def test_validate_base_args_skips_cookie_probe_when_cookie_verified(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+            cookie_verified=True,
+        )
+
+        with patch("uploader.xiaohongshu_uploader.main.os.path.exists", return_value=True):
+            with patch("uploader.xiaohongshu_uploader.main.cookie_auth", new=AsyncMock()) as mock_cookie_auth:
+                asyncio.run(app.validate_base_args())
+
+        mock_cookie_auth.assert_not_awaited()
+
+    def test_build_xhs_context_options_can_omit_storage_state_for_login(self):
+        options = xhs_main.build_xhs_context_options()
+
+        self.assertNotIn("storage_state", options)
+        self.assertEqual(options["viewport"], {"width": 1536, "height": 864})
+        self.assertEqual(options["locale"], "zh-CN")
+        self.assertEqual(options["timezone_id"], "Asia/Shanghai")
 
     def test_note_title_defaults_do_not_override_explicit_title(self):
         app = xhs_main.XiaoHongShuNote(

@@ -1,0 +1,351 @@
+{
+  "account_file": "xiaohongshu_芊芊.json",
+  "snapshot": {
+    "url": "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=image",
+    "webdriver": false,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/148.0.0.0 Safari/537.36",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "148"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "148"
+        },
+        {
+          "brand": "Not/A)Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "Windows",
+      "mobile": false
+    },
+    "language": "zh-CN",
+    "languages": [
+      "zh-CN"
+    ],
+    "platform": "Win32",
+    "hardwareConcurrency": 28,
+    "deviceMemory": 32,
+    "maxTouchPoints": 10,
+    "pluginsLength": 5,
+    "chromeKeys": [
+      "loadTimes",
+      "csi"
+    ],
+    "hasWebGL": true,
+    "timezone": "Asia/Shanghai"
+  },
+  "globals": {
+    "fingerprintType": "undefined",
+    "fingerprintVersion": null,
+    "fingerprintKeys": [],
+    "eagletType": "undefined",
+    "eagletKeys": [],
+    "sdtSourceStorageExists": true,
+    "sdtSourceStorageLength": 787,
+    "userInfoExists": true,
+    "webUserInfoExists": true
+  },
+  "events": [
+    {
+      "method": "POST",
+      "url": "https://as.xiaohongshu.com/api/sec/v1/scripting",
+      "resource_type": "xhr",
+      "headers": {
+        "authorization": "<redacted>",
+        "content-type": "application/json",
+        "cookie": "<redacted>",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "x-s-common": "<redacted>",
+        "x-s": "<redacted>",
+        "x-t": "<redacted>",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "post_data": {
+        "kind": "json",
+        "length": 71,
+        "keys": [
+          "callFrom",
+          "callback",
+          "type",
+          "appId"
+        ],
+        "value_types": {
+          "callFrom": "str",
+          "callback": "str",
+          "type": "str",
+          "appId": "str"
+        },
+        "value_lengths": {
+          "callFrom": 16,
+          "callback": 0,
+          "type": 2,
+          "appId": 3
+        }
+      },
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "response_body": {
+        "kind": "json",
+        "length": 65038,
+        "keys": [
+          "msg",
+          "data",
+          "code",
+          "success"
+        ],
+        "value_types": {
+          "msg": "str",
+          "data": "dict",
+          "code": "int",
+          "success": "bool"
+        },
+        "value_lengths": {
+          "msg": 2,
+          "data": 1
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://as.xiaohongshu.com/api/sec/v1/sbtsource",
+      "resource_type": "xhr",
+      "headers": {
+        "authorization": "<redacted>",
+        "content-type": "application/json",
+        "cookie": "<redacted>",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "x-s-common": "<redacted>",
+        "x-s": "<redacted>",
+        "x-t": "<redacted>",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "post_data": {
+        "kind": "json",
+        "length": 45,
+        "keys": [
+          "callFrom",
+          "appId"
+        ],
+        "value_types": {
+          "callFrom": "str",
+          "appId": "str"
+        },
+        "value_lengths": {
+          "callFrom": 16,
+          "appId": 3
+        }
+      },
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "response_body": {
+        "kind": "json",
+        "length": 802,
+        "keys": [
+          "data",
+          "code",
+          "success",
+          "msg"
+        ],
+        "value_types": {
+          "data": "dict",
+          "code": "int",
+          "success": "bool",
+          "msg": "str"
+        },
+        "value_lengths": {
+          "data": 9,
+          "msg": 2
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://as.xiaohongshu.com/api/sec/v1/scripting",
+      "resource_type": "xhr",
+      "headers": {
+        "authorization": "<redacted>",
+        "content-type": "application/json",
+        "cookie": "<redacted>",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "x-s-common": "<redacted>",
+        "x-s": "<redacted>",
+        "x-t": "<redacted>",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "post_data": {
+        "kind": "json",
+        "length": 56,
+        "keys": [
+          "callFrom",
+          "callback"
+        ],
+        "value_types": {
+          "callFrom": "str",
+          "callback": "str"
+        },
+        "value_lengths": {
+          "callFrom": 16,
+          "callback": 11
+        }
+      },
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "response_body": {
+        "kind": "json",
+        "length": 54448,
+        "keys": [
+          "code",
+          "success",
+          "msg",
+          "data"
+        ],
+        "value_types": {
+          "code": "int",
+          "success": "bool",
+          "msg": "str",
+          "data": "dict"
+        },
+        "value_lengths": {
+          "msg": 2,
+          "data": 2
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://edith.xiaohongshu.com/api/redcaptcha/v2/getconfig",
+      "resource_type": "xhr",
+      "headers": {
+        "content-type": "application/json",
+        "cookie": "<redacted>",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "x-s-common": "<redacted>",
+        "x-s": "<redacted>",
+        "x-t": "<redacted>",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "x-b3-traceid": "<redacted>"
+      },
+      "post_data": {
+        "kind": "json",
+        "length": 2,
+        "keys": [],
+        "value_types": {}
+      },
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "response_body": {
+        "kind": "json",
+        "length": 152,
+        "keys": [
+          "success",
+          "msg",
+          "data",
+          "code"
+        ],
+        "value_types": {
+          "success": "bool",
+          "msg": "str",
+          "data": "dict",
+          "code": "int"
+        },
+        "value_lengths": {
+          "msg": 2,
+          "data": 1
+        }
+      }
+    },
+    {
+      "method": "POST",
+      "url": "https://as.xiaohongshu.com/api/sec/v1/shield/webprofile",
+      "resource_type": "xhr",
+      "headers": {
+        "authorization": "<redacted>",
+        "content-type": "application/json",
+        "cookie": "<redacted>",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+        "x-s-common": "<redacted>",
+        "x-s": "<redacted>",
+        "x-t": "<redacted>",
+        "sec-ch-ua": "\"Chromium\";v=\"148\", \"Google Chrome\";v=\"148\", \"Not/A)Brand\";v=\"99\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\""
+      },
+      "post_data": {
+        "kind": "json",
+        "length": 9941,
+        "keys": [
+          "platform",
+          "sdkVersion",
+          "svn",
+          "profileData"
+        ],
+        "value_types": {
+          "platform": "str",
+          "sdkVersion": "str",
+          "svn": "str",
+          "profileData": "str"
+        },
+        "value_lengths": {
+          "platform": 6,
+          "sdkVersion": 5,
+          "svn": 1,
+          "profileData": 9872
+        }
+      },
+      "status": 200,
+      "response_headers": {
+        "content-type": "application/json; charset=utf-8"
+      },
+      "response_body": {
+        "kind": "json",
+        "length": 65,
+        "keys": [
+          "code",
+          "success",
+          "msg",
+          "data"
+        ],
+        "value_types": {
+          "code": "int",
+          "success": "bool",
+          "msg": "str",
+          "data": "dict"
+        },
+        "value_lengths": {
+          "msg": 2,
+          "data": 1
+        }
+      }
+    }
+  ]
+}

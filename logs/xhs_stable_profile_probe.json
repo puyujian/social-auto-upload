@@ -1,0 +1,43 @@
+{
+  "account_file": "xiaohongshu_芊芊.json",
+  "snapshot": {
+    "url": "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=image",
+    "webdriver": false,
+    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    "userAgentData": {
+      "brands": [
+        {
+          "brand": "Chromium",
+          "version": "148"
+        },
+        {
+          "brand": "Google Chrome",
+          "version": "148"
+        },
+        {
+          "brand": "Not/A)Brand",
+          "version": "99"
+        }
+      ],
+      "platform": "Windows",
+      "mobile": false
+    },
+    "language": "zh-CN",
+    "languages": [
+      "zh-CN"
+    ],
+    "platform": "Win32",
+    "hardwareConcurrency": 28,
+    "deviceMemory": 32,
+    "maxTouchPoints": 10,
+    "pluginsLength": 5,
+    "outer": {
+      "width": 1552,
+      "height": 952,
+      "innerWidth": 1536,
+      "innerHeight": 864
+    },
+    "timezone": "Asia/Shanghai",
+    "hasWebGL": true
+  }
+}

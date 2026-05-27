@@ -106,7 +106,7 @@ class XiaohongshuVideoUploadRequest:
     group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
-    headless: bool = True
+    headless: bool = False
 
 
 @dataclass(slots=True)
@@ -120,7 +120,7 @@ class XiaohongshuNoteUploadRequest:
     group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
-    headless: bool = True
+    headless: bool = False
 
 
 @dataclass(slots=True)
@@ -132,6 +132,9 @@ class BilibiliVideoUploadRequest:
     tid: int
     tags: list[str]
     publish_date: datetime | int
+    upload_limit: int = 1
+    upload_line: str = ""
+    submit: str = ""
 
 
 def has_interactive_terminal() -> bool:
@@ -194,7 +197,7 @@ async def check_kuaishou_account(account_name: str) -> bool:
     return await kuaishou_cookie_auth(str(account_file))
 
 
-async def login_xiaohongshu_account(account_name: str, headless: bool = True) -> dict:
+async def login_xiaohongshu_account(account_name: str, headless: bool = False) -> dict:
     account_file = resolve_account_file("xiaohongshu", account_name)
     return await xiaohongshu_setup(str(account_file), handle=True, return_detail=True, headless=headless)
 
@@ -203,7 +206,7 @@ async def check_xiaohongshu_account(account_name: str) -> bool:
     account_file = resolve_account_file("xiaohongshu", account_name)
     if not account_file.exists():
         return False
-    return await xiaohongshu_cookie_auth(str(account_file))
+    return await xiaohongshu_cookie_auth(str(account_file), headless=False)
 
 
 async def login_bilibili_account(account_name: str) -> dict:
@@ -334,8 +337,7 @@ async def upload_kuaishou_note(request: KuaishouNoteUploadRequest) -> Path:
 
 async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Path:
     account_file = resolve_account_file("xiaohongshu", request.account_name)
-    is_ready = await xiaohongshu_setup(str(account_file), handle=False)
-    if not is_ready:
+    if not account_file.exists():
         raise RuntimeError(
             f"Xiaohongshu cookie is missing or expired: {account_file}. Run `sau xiaohongshu login --account {request.account_name}` first."
         )
@@ -352,6 +354,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        cookie_verified=True,
     )
     await app.main()
     return account_file
@@ -359,8 +362,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
 
 async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path:
     account_file = resolve_account_file("xiaohongshu", request.account_name)
-    is_ready = await xiaohongshu_setup(str(account_file), handle=False)
-    if not is_ready:
+    if not account_file.exists():
         raise RuntimeError(
             f"Xiaohongshu cookie is missing or expired: {account_file}. Run `sau xiaohongshu login --account {request.account_name}` first."
         )
@@ -377,6 +379,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        cookie_verified=True,
     )
     await app.main()
     return account_file
@@ -400,7 +403,13 @@ async def upload_bilibili_video(request: BilibiliVideoUploadRequest) -> Path:
         request.description,
         "--tid",
         str(request.tid),
+        "--limit",
+        str(max(1, int(request.upload_limit or 1))),
     ]
+    if request.submit:
+        arguments.extend(["--submit", request.submit])
+    if request.upload_line:
+        arguments.extend(["--line", request.upload_line])
     if request.tags:
         arguments.extend(["--tag", ",".join(request.tags)])
     if isinstance(request.publish_date, datetime):
@@ -428,12 +437,12 @@ def schedule_value(value: str):
         ) from exc
 
 
-def add_runtime_flags(parser: argparse.ArgumentParser) -> None:
+def add_runtime_flags(parser: argparse.ArgumentParser, *, default_headless: bool = True) -> None:
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
     headless_group = parser.add_mutually_exclusive_group()
     headless_group.add_argument("--headed", dest="headless", action="store_false", help="Run with browser UI")
     headless_group.add_argument("--headless", dest="headless", action="store_true", help="Run in headless mode")
-    parser.set_defaults(headless=True)
+    parser.set_defaults(headless=default_headless)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -509,7 +518,7 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser = xiaohongshu_actions.add_parser(action_name, help=f"Xiaohongshu {action_name}")
         action_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
         if action_name == "login":
-            add_runtime_flags(action_parser)
+            add_runtime_flags(action_parser, default_headless=False)
 
     xiaohongshu_upload_video_parser = xiaohongshu_actions.add_parser("upload-video", help="Upload one video to Xiaohongshu")
     xiaohongshu_upload_video_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
@@ -520,7 +529,7 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_video_parser.add_argument("--thumbnail", type=existing_file_path, help="Optional thumbnail path")
     xiaohongshu_upload_video_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
-    add_runtime_flags(xiaohongshu_upload_video_parser)
+    add_runtime_flags(xiaohongshu_upload_video_parser, default_headless=False)
 
     xiaohongshu_upload_note_parser = xiaohongshu_actions.add_parser("upload-note", help="Upload one note to Xiaohongshu")
     xiaohongshu_upload_note_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
@@ -530,7 +539,7 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_note_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     xiaohongshu_upload_note_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_note_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
-    add_runtime_flags(xiaohongshu_upload_note_parser)
+    add_runtime_flags(xiaohongshu_upload_note_parser, default_headless=False)
 
     bilibili_parser = platform_parsers.add_parser("bilibili", help="Bilibili operations")
     bilibili_actions = bilibili_parser.add_subparsers(dest="action", required=True)
@@ -547,6 +556,23 @@ def build_parser() -> argparse.ArgumentParser:
     bilibili_upload_video_parser.add_argument("--tid", required=True, type=int, help="Bilibili category id")
     bilibili_upload_video_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     bilibili_upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
+    bilibili_upload_video_parser.add_argument(
+        "--limit",
+        type=int,
+        default=1,
+        help="Max concurrent upload chunks for one Bilibili video. Defaults to 1 to avoid platform upload-rate limits.",
+    )
+    bilibili_upload_video_parser.add_argument(
+        "--line",
+        default="",
+        help="Optional biliup upload line, for example bldsa, tx, bda2.",
+    )
+    bilibili_upload_video_parser.add_argument(
+        "--submit",
+        choices=("app", "web", "b-cut-android"),
+        default="",
+        help="Optional biliup submit interface.",
+    )
     return parser
 
 
@@ -729,6 +755,9 @@ async def dispatch(args: argparse.Namespace) -> int:
                 tid=args.tid,
                 tags=parse_tags(args.tags),
                 publish_date=args.schedule or 0,
+                upload_limit=args.limit,
+                upload_line=args.line,
+                submit=args.submit,
             )
             await upload_bilibili_video(request)
             print(f"Bilibili video upload submitted: {request.video_file}")

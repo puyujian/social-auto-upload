@@ -35,6 +35,21 @@ XHS_TOPIC_CONTAINER_SELECTOR = "#creator-editor-topic-container"
 XHS_TOPIC_OPTION_SELECTOR = f"{XHS_TOPIC_CONTAINER_SELECTOR} .item"
 XHS_TOPIC_CONTAINER_TIMEOUT = 10000
 XHS_TOPIC_OPTION_TIMEOUT = 5000
+XHS_DESC_EDITOR_SELECTOR = 'p[data-placeholder*="输入正文描述"]'
+XHS_STABLE_CONTEXT_OPTIONS = {
+    "viewport": {"width": 1536, "height": 864},
+    "locale": "zh-CN",
+    "timezone_id": "Asia/Shanghai",
+    "permissions": ["geolocation"],
+}
+XHS_PUBLISH_RETRY_INTERVAL_SECONDS = 2
+
+
+def build_xhs_context_options(storage_state: str | os.PathLike | None = None) -> dict:
+    options = dict(XHS_STABLE_CONTEXT_OPTIONS)
+    if storage_state:
+        options["storage_state"] = str(storage_state)
+    return options
 
 
 def _msg(emoji: str, text: str) -> str:
@@ -103,7 +118,7 @@ async def _open_xhs_qrcode_panel(page: Page) -> None:
 
     switch_img = login_box.locator(XHS_LOGIN_SWITCH_SELECTOR).first
     await switch_img.wait_for(state="visible", timeout=10000)
-    await switch_img.click()
+    await HumanBehaviorModule().click(page, locator=switch_img, timeout=10000)
     await login_box.locator("div:has-text('扫一扫')").first.wait_for(state="visible", timeout=10000)
 
 
@@ -176,17 +191,17 @@ async def _is_xhs_login_completed(page: Page) -> bool:
         return True
 
 
-async def cookie_auth(account_file):
+async def cookie_auth(account_file, *, headless: bool = False):
     if not os.path.exists(account_file):
         return False
 
     async with async_playwright() as playwright:
         if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=True, executable_path=LOCAL_CHROME_PATH)
+            browser = await playwright.chromium.launch(headless=headless, executable_path=LOCAL_CHROME_PATH)
         else:
-            browser = await playwright.chromium.launch(headless=True, channel="chrome")
+            browser = await playwright.chromium.launch(headless=headless, channel="chrome")
         try:
-            context = await browser.new_context(storage_state=account_file)
+            context = await browser.new_context(**build_xhs_context_options(account_file))
             context = await set_init_script(context)
             page = await context.new_page()
             await page.goto(XHS_PUBLISH_VIDEO_URL)
@@ -219,9 +234,9 @@ async def xiaohongshu_setup(
     handle=False,
     return_detail=False,
     qrcode_callback=None,
-    headless: bool = LOCAL_CHROME_HEADLESS,
+    headless: bool = False,
 ):
-    if not os.path.exists(account_file) or not await cookie_auth(account_file):
+    if not os.path.exists(account_file) or not await cookie_auth(account_file, headless=headless):
         if not handle:
             result = _build_login_result(False, "cookie_invalid", "cookie文件不存在或已失效", account_file)
             return result if return_detail else False
@@ -242,7 +257,7 @@ async def xiaohongshu_cookie_gen(
     qrcode_callback=None,
     poll_interval: int = 3,
     max_checks: int = 100,
-    headless: bool = LOCAL_CHROME_HEADLESS,
+    headless: bool = False,
 ):
     if headless:
         xiaohongshu_logger.info(_msg("🖼️", "小红书登录将以无头模式运行，小人会输出终端二维码并保存本地二维码图片"))
@@ -252,7 +267,7 @@ async def xiaohongshu_cookie_gen(
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        context = await browser.new_context()
+        context = await browser.new_context(**build_xhs_context_options())
         context = await set_init_script(context)
         qrcode_path = None
         qrcode_info = None
@@ -268,7 +283,7 @@ async def xiaohongshu_cookie_gen(
                 if await _is_xhs_login_completed(page):
                     await asyncio.sleep(2)
                     await context.storage_state(path=account_file)
-                    if await cookie_auth(account_file):
+                    if await cookie_auth(account_file, headless=headless):
                         xiaohongshu_logger.success(_msg("🥳", "小红书扫码登录成功，小人开心收工"))
                         result = _build_login_result(True, "success", "小红书扫码登录成功", account_file, qrcode_info, page.url)
                     else:
@@ -311,7 +326,8 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         account_file,
         publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
-        headless: bool = LOCAL_CHROME_HEADLESS,
+        headless: bool = False,
+        cookie_verified: bool = False,
     ):
         self.publish_date = publish_date
         self.account_file = str(account_file)
@@ -320,14 +336,31 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         self.date_format = "%Y年%m月%d日 %H:%M"
         self.local_executable_path = LOCAL_CHROME_PATH
         self.headless = headless
+        self.cookie_verified = cookie_verified
         self.human = HumanBehaviorModule()
 
     async def apply_human_behavior(self, page: Page, context) -> None:
-        await self.human.apply_fingerprint_obfuscation(page, context)
+        # 小红书发布页会采集浏览器画像；这里保留真人操作节奏，
+        # 不再随机改 UA/硬件/时区，避免同一次会话内出现互相矛盾的指纹。
+        return None
+
+    def build_browser_context_options(self) -> dict:
+        return build_xhs_context_options(self.account_file)
+
+    async def open_publish_context(self, playwright: Playwright):
+        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
+        context = await browser.new_context(**self.build_browser_context_options())
+        context = await set_init_script(context)
+        return browser, context
 
     async def goto_publish_page(self, page: Page, url: str) -> None:
         await self.human.goto(page, url)
-        await page.wait_for_url(url)
+        try:
+            await page.wait_for_url(url, timeout=15000)
+        except Exception:
+            if page.url.startswith(XHS_LOGIN_URL):
+                raise RuntimeError(f"cookie文件已失效，请先完成小红书登录: {self.account_file}")
+            raise
 
     async def human_click_locator(self, page: Page, locator, *, timeout: int = 10000) -> None:
         try:
@@ -336,10 +369,62 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             pass
         await self.human.click(page, locator=locator, timeout=timeout)
 
+    async def click_contenteditable_field(self, page: Page, locator, *, timeout: int = 10000):
+        field = locator.first
+        await field.wait_for(state="visible", timeout=timeout)
+        await field.scroll_into_view_if_needed()
+        box = await field.bounding_box()
+        position = None
+        if box:
+            position = {
+                "x": min(max(12, box["width"] * 0.08), max(1, box["width"] - 2)),
+                "y": min(max(12, box["height"] * 0.5), max(1, box["height"] - 2)),
+            }
+        await self.human.click(page, locator=field, position=position, timeout=timeout)
+        return field
+
+    async def clear_text_field_manually(
+        self,
+        page: Page,
+        locator,
+        *,
+        timeout: int = 10000,
+        contenteditable: bool = False,
+    ):
+        """通过真实键盘操作清空输入区，避免直接改 DOM 值。"""
+        if contenteditable:
+            field = await self.click_contenteditable_field(page, locator, timeout=timeout)
+        else:
+            field = locator.first
+            await field.wait_for(state="visible", timeout=timeout)
+            await self.human_click_locator(page, field, timeout=timeout)
+        await page.keyboard.press("Control+A")
+        await page.keyboard.press("Backspace")
+        return field
+
+    async def type_text_field_manually(
+        self,
+        page: Page,
+        locator,
+        text: str,
+        *,
+        timeout: int = 10000,
+        contenteditable: bool = False,
+    ) -> None:
+        await self.clear_text_field_manually(page, locator, timeout=timeout, contenteditable=contenteditable)
+        if text:
+            await self.human.type(page, text)
+
+    async def focus_contenteditable_field(self, page: Page, locator, *, timeout: int = 10000) -> None:
+        await self.click_contenteditable_field(page, locator, timeout=timeout)
+
+    async def fill_contenteditable_field(self, page: Page, locator, text: str, *, timeout: int = 10000) -> None:
+        await self.type_text_field_manually(page, locator, text, timeout=timeout, contenteditable=True)
+
     async def validate_base_args(self):
         if not os.path.exists(self.account_file):
             raise RuntimeError(f"cookie文件不存在，请先完成小红书登录: {self.account_file}")
-        if not await cookie_auth(self.account_file):
+        if not self.cookie_verified and not await cookie_auth(self.account_file, headless=self.headless):
             raise RuntimeError(f"cookie文件已失效，请先完成小红书登录: {self.account_file}")
 
         if self.publish_strategy not in {
@@ -368,10 +453,10 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             return True
 
         xiaohongshu_logger.info(_msg("📍", f"小人准备设置位置: {location}"))
-        loc_ele = await page.wait_for_selector('div.d-text.d-select-placeholder.d-text-ellipsis.d-text-nowrap')
-        await loc_ele.click()
+        loc_ele = page.locator('div.d-text.d-select-placeholder.d-text-ellipsis.d-text-nowrap').first
+        await self.human_click_locator(page, loc_ele)
         await page.wait_for_timeout(1000)
-        await page.keyboard.type(location)
+        await self.human.type(page, location)
         dropdown_selector = 'div.d-popover.d-popover-default.d-dropdown.--size-min-width-large'
         await page.wait_for_timeout(2000)
         try:
@@ -387,22 +472,19 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         )
         await page.wait_for_timeout(3000)
         try:
-            location_option = await page.wait_for_selector(
-                flexible_xpath,
-                timeout=3000
-            )
-
-            if not location_option:
-                location_option = await page.wait_for_selector(
+            location_option = page.locator(flexible_xpath).first
+            try:
+                await location_option.wait_for(state="visible", timeout=3000)
+            except Exception:
+                location_option = page.locator(
                     f'//div[contains(@class, "d-popover") and contains(@class, "d-dropdown")]'
                     f'//div[contains(@class, "d-options-wrapper")]'
                     f'//div[contains(@class, "d-grid") and contains(@class, "d-options")]'
-                    f'/div[1]//div[contains(@class, "name") and text()="{location}"]',
-                    timeout=2000
-                )
+                    f'/div[1]//div[contains(@class, "name") and text()="{location}"]'
+                ).first
+                await location_option.wait_for(state="visible", timeout=2000)
 
-            await location_option.scroll_into_view_if_needed()
-            await location_option.click()
+            await self.human_click_locator(page, location_option)
             xiaohongshu_logger.success(_msg("🥳", f"位置已经设置成 {location}"))
             return True
         except Exception as e:
@@ -436,9 +518,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
 
         input_box = selector.locator("input").first
         if await input_box.count():
-            await input_box.fill("")
-            await self.human.click(page, locator=input_box)
-            await self.human.type(page, group_chat)
+            await self.type_text_field_manually(page, input_box, group_chat)
         else:
             await self.human.type(page, group_chat)
         await page.wait_for_timeout(1200)
@@ -483,45 +563,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         xiaohongshu_logger.success(_msg("🥳", f"群聊已经设置成 {group_chat}"))
 
     async def fill_text_field(self, page: Page, locator, text: str, *, timeout: int = 10000) -> None:
-        field = locator.first
-        await field.wait_for(state="visible", timeout=timeout)
-        try:
-            await field.fill("")
-            await self.human.type(page, text, field_locator=field)
-            return
-        except Exception as exc:
-            xiaohongshu_logger.debug(_msg("😵", f"常规填写失败，改用页面内写入: {_short_error(exc)}"))
-
-        await field.evaluate(
-            """(node, value) => {
-                const target = node.closest('[contenteditable="true"]') || node;
-                target.focus();
-                target.textContent = "";
-                const selection = window.getSelection();
-                const range = document.createRange();
-                range.selectNodeContents(target);
-                range.collapse(false);
-                if (selection) {
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                }
-                if (!document.execCommand || !document.execCommand("insertText", false, value)) {
-                    target.textContent = value;
-                    range.selectNodeContents(target);
-                    range.collapse(false);
-                    if (selection) {
-                        selection.removeAllRanges();
-                        selection.addRange(range);
-                    }
-                }
-                const inputEvent = typeof InputEvent === "function"
-                    ? new InputEvent("input", { bubbles: true, inputType: "insertText", data: value })
-                    : new Event("input", { bubbles: true });
-                target.dispatchEvent(inputEvent);
-                target.dispatchEvent(new Event("change", { bubbles: true }));
-            }""",
-            text,
-        )
+        await self.type_text_field_manually(page, locator, text, timeout=timeout)
 
     async def fill_title(self, page: Page) -> None:
         title_container = page.locator('input[placeholder*="填写标题"]')
@@ -531,9 +573,8 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         if not getattr(self, "desc", ""):
             return
 
-        desc = page.locator('p[data-placeholder*="输入正文描述"]')
-        await self.human_click_locator(page, desc)
-        await self.fill_text_field(page, desc, self.desc)
+        desc = page.locator(XHS_DESC_EDITOR_SELECTOR)
+        await self.fill_contenteditable_field(page, desc, self.desc)
         await page.keyboard.press("Enter")
 
     async def fill_tags(self, page: Page) -> None:
@@ -541,8 +582,8 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             return
 
         if not getattr(self, "desc", ""):
-            desc = page.locator('p[data-placeholder*="输入正文描述"]')
-            await self.human_click_locator(page, desc)
+            desc = page.locator(XHS_DESC_EDITOR_SELECTOR)
+            await self.focus_contenteditable_field(page, desc)
 
         tags = [str(tag or "").strip().lstrip("#") for tag in self.tags]
         tags = [tag for tag in tags if tag]
@@ -550,7 +591,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
             return
 
         for tag in tags:
-            await page.keyboard.type("#" + tag, delay=30)
+            await self.human.type(page, "#" + tag)
             try:
                 await page.locator(XHS_TOPIC_CONTAINER_SELECTOR).wait_for(
                     state="visible",
@@ -585,8 +626,9 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         desc: str | None = None,
         publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
-        headless: bool = LOCAL_CHROME_HEADLESS,
+        headless: bool = False,
         group_chat: str = "",
+        cookie_verified: bool = False,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -594,6 +636,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            cookie_verified=cookie_verified,
         )
         self.title = title
         self.file_path = file_path
@@ -627,7 +670,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         ).locator("div.cover > div.default:visible")
         await cover_upload_dialog.wait_for(state="visible", timeout=30000)
 
-        await cover_upload_dialog.click(force=True)
+        await self.human_click_locator(page, cover_upload_dialog, timeout=30000)
 
         modal = page.locator("div.d-modal.cover-modal")
         await modal.wait_for(state="visible", timeout=30000)
@@ -664,7 +707,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                         # 检查是否有特定的状态码或百分比
                         stage_elements = await preview_new.query_selector_all('div.stage')
                         for stage in stage_elements:
-                            text_content = await page.evaluate('(element) => element.textContent', stage)
+                            text_content = await stage.inner_text()
                             if '上传成功' in text_content or '分辨率' in text_content:
                                 upload_success = True
                                 break
@@ -714,18 +757,13 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
                 if self.debug:
                     await page.screenshot(full_page=True)
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(XHS_PUBLISH_RETRY_INTERVAL_SECONDS)
 
     async def upload(self, playwright: Playwright) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、视频文件、封面和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            permissions=["geolocation"],
-            storage_state=self.account_file,
-        )
-        context = await set_init_script(context)
+        browser, context = await self.open_publish_context(playwright)
 
         try:
             page = await context.new_page()
@@ -757,8 +795,9 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         desc: str | None = None,
         publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
-        headless: bool = LOCAL_CHROME_HEADLESS,
+        headless: bool = False,
         group_chat: str = "",
+        cookie_verified: bool = False,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -766,6 +805,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            cookie_verified=cookie_verified,
         )
         self.image_paths = image_paths
         self.note = note or ""
@@ -835,18 +875,13 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
                 xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
                 if self.debug:
                     await page.screenshot(full_page=True)
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(XHS_PUBLISH_RETRY_INTERVAL_SECONDS)
 
     async def upload(self, playwright: Playwright) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、图片和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "图文上传前检查通过"))
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(
-            permissions=["geolocation"],
-            storage_state=self.account_file,
-        )
-        context = await set_init_script(context)
+        browser, context = await self.open_publish_context(playwright)
 
         try:
             page = await context.new_page()
