@@ -46,11 +46,20 @@ uv pip install -e .
 
 安装完成后，会注册 `sau` 命令。
 
-### 4. 安装 patchright Chromium
+### 4. 准备浏览器
 
-当前主线使用 `patchright` 驱动浏览器。
+当前主线使用两套浏览器运行时：
 
-国内用户推荐先指定镜像，再安装 Chromium。
+- 小红书：使用 `CloakBrowser`，首次运行时会自动下载自己的 Chromium
+- 抖音、快手等其它浏览器链路：继续使用 `patchright`
+
+如果只跑小红书，一般不需要手动执行浏览器安装命令；如果需要提前下载 CloakBrowser 浏览器，可以执行：
+
+```bash
+python -m cloakbrowser install
+```
+
+其它平台需要 `patchright` Chromium。国内用户推荐先指定镜像，再安装 Chromium。
 
 Windows PowerShell：
 
@@ -76,9 +85,11 @@ Windows 也可以直接手动复制并重命名。
 
 当前通常还会用到这些配置项：
 
-- `LOCAL_CHROME_PATH`
-- `LOCAL_CHROME_HEADLESS`
+- `LOCAL_CHROME_PATH`：非小红书浏览器链路或旧流程使用
+- `LOCAL_CHROME_HEADLESS`：非小红书浏览器链路或旧流程使用
 - `DEBUG_MODE`
+
+小红书当前由 `CloakBrowser` 接管浏览器，不再读取 `LOCAL_CHROME_PATH`。
 
 `XHS_SERVER` 目前只和小红书旧流程相关。
 
@@ -159,7 +170,13 @@ sau bilibili upload-video --account <account_name> --file videos/demo.mp4 --titl
 uv pip install -e .
 ```
 
-4. 如需浏览器驱动，优先使用：
+4. 小红书链路会由 `CloakBrowser` 自动准备浏览器；如需提前下载：
+
+```bash
+python -m cloakbrowser install
+```
+
+5. 如需抖音、快手等其它平台浏览器驱动，优先使用：
 
 Windows PowerShell：
 
@@ -173,7 +190,7 @@ Linux / macOS：
 PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright" patchright install chromium
 ```
 
-5. 安装完成后，优先检查：
+6. 安装完成后，优先检查：
 
 ```bash
 sau --help
@@ -183,7 +200,7 @@ sau xiaohongshu --help
 sau bilibili --help
 ```
 
-6. 如果用户的目标是抖音或快手的登录、cookie 校验、视频上传、图文上传，优先走 CLI：
+7. 如果用户的目标是抖音、快手或小红书的登录、cookie 校验、视频上传、图文上传，优先走 CLI：
 
 ```bash
 sau douyin login
@@ -206,7 +223,7 @@ sau bilibili check
 sau bilibili upload-video
 ```
 
-7. 如果用户明确在使用 skill 系统，再引导其阅读：
+8. 如果用户明确在使用 skill 系统，再引导其阅读：
 
 - `skills/douyin-upload/SKILL.md`
 - `skills/douyin-upload/references/cli-contract.md`

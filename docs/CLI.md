@@ -34,9 +34,15 @@ sau xiaohongshu --help
 sau bilibili --help
 ```
 
-## 安装 patchright 浏览器
+## 浏览器运行时
 
-Windows 下推荐先指定镜像，再安装 Chromium：
+小红书链路使用 `CloakBrowser`，首次运行会自动下载它自己的 Chromium。需要提前下载时可执行：
+
+```bash
+python -m cloakbrowser install
+```
+
+抖音、快手等其它浏览器链路继续使用 `patchright`。Windows 下推荐先指定镜像，再安装 Chromium：
 
 ```powershell
 $env:PLAYWRIGHT_DOWNLOAD_HOST="https://npmmirror.com/mirrors/playwright"; patchright install chromium

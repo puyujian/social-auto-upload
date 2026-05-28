@@ -4,7 +4,7 @@
 
 - 已安装 `social-auto-upload`
 - 可以调用 `sau` 命令，或至少有等效调用方式
-- 已为 `patchright` 安装 Chromium
+- 已安装 `CloakBrowser` 依赖；首次运行小红书命令时会自动下载 CloakBrowser Chromium
 
 ## 推荐安装方式
 
@@ -13,6 +13,16 @@
 ```bash
 uv pip install -e .
 ```
+
+## 准备 CloakBrowser 浏览器
+
+小红书链路使用 `CloakBrowser`。通常首次运行会自动下载浏览器；如果要提前准备，执行：
+
+```bash
+python -m cloakbrowser install
+```
+
+`patchright` Chromium 仍用于其它平台，不是小红书当前主线的浏览器入口。
 
 ## 安装 patchright 浏览器
 

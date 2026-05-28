@@ -9,11 +9,12 @@ import uploader.xiaohongshu_uploader.main as xhs_main
 
 
 class FakeLocator:
-    def __init__(self, name, count=0, src=None, children=None):
+    def __init__(self, name, count=0, src=None, children=None, attrs=None):
         self.name = name
         self._count = count
         self._src = src
         self._children = children or {}
+        self._attrs = attrs or {}
 
     @property
     def first(self):
@@ -38,6 +39,8 @@ class FakeLocator:
         return None
 
     async def get_attribute(self, name):
+        if name in self._attrs:
+            return self._attrs[name]
         if name == "src":
             return self._src
         return None
@@ -73,8 +76,8 @@ class RecordingKeyboard:
 
 
 class RecordingLocator(FakeLocator):
-    def __init__(self, name, children=None):
-        super().__init__(name, count=1, children=children)
+    def __init__(self, name, children=None, attrs=None):
+        super().__init__(name, count=1, children=children, attrs=attrs)
         self.actions = []
 
     async def fill(self, value):
@@ -169,6 +172,28 @@ class RecordingPage:
         return None
 
 
+class PublishButtonPage:
+    def __init__(self):
+        self.keyboard = RecordingKeyboard()
+        self.publish_button = RecordingLocator(
+            "xhs-publish-btn",
+            attrs={
+                "is-save-draft": "true",
+                "submit-disabled": "false",
+            },
+        )
+        self.wait_functions = []
+
+    def locator(self, selector):
+        if selector == xhs_main.XHS_CUSTOM_PUBLISH_BUTTON_SELECTOR:
+            return self.publish_button
+        return FakeLocator(selector)
+
+    async def wait_for_function(self, expression, arg=None, timeout=None):
+        self.wait_functions.append((arg, timeout))
+        return True
+
+
 class RecordingHuman:
     def __init__(self):
         self.actions = []
@@ -185,6 +210,26 @@ class RecordingHuman:
 
     async def type(self, page, text, *, field_locator=None):
         self.actions.append(("type", text, field_locator.name if field_locator else None))
+
+
+class DummyBrowser:
+    def __init__(self):
+        self.closed = 0
+
+    async def close(self):
+        self.closed += 1
+
+
+class DummyContext:
+    def __init__(self):
+        self.init_script_applied = False
+        self.closed = 0
+
+    async def add_init_script(self, path):
+        self.init_script_applied = True
+
+    async def close(self):
+        self.closed += 1
 
 
 class XiaohongshuUploaderTests(unittest.TestCase):
@@ -550,6 +595,81 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertEqual(options["viewport"], {"width": 1536, "height": 864})
         self.assertEqual(options["locale"], "zh-CN")
         self.assertEqual(options["timezone_id"], "Asia/Shanghai")
+
+    def test_open_xhs_cloak_context_maps_stable_options_to_cloakbrowser(self):
+        captured = {}
+        context = DummyContext()
+
+        async def fake_launch_context_async(**kwargs):
+            captured.update(kwargs)
+            return context
+
+        with patch(
+            "uploader.xiaohongshu_uploader.main._load_cloakbrowser_launch_context_async",
+            return_value=fake_launch_context_async,
+        ):
+            browser, opened_context = asyncio.run(
+                xhs_main.open_xhs_cloak_context(headless=False, storage_state="account.json")
+            )
+
+        self.assertIs(opened_context, context)
+        self.assertIsInstance(browser, xhs_main._ClosedCloakBrowser)
+        self.assertTrue(context.init_script_applied)
+        self.assertEqual(captured["headless"], False)
+        self.assertEqual(captured["backend"], "playwright")
+        self.assertEqual(captured["storage_state"], "account.json")
+        self.assertEqual(captured["viewport"], {"width": 1536, "height": 864})
+        self.assertEqual(captured["locale"], "zh-CN")
+        self.assertEqual(captured["timezone"], "Asia/Shanghai")
+        self.assertEqual(captured["permissions"], ["geolocation"])
+
+    def test_open_publish_context_uses_cloakbrowser_adapter(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        browser = DummyBrowser()
+        context = DummyContext()
+
+        async def fake_open_xhs_cloak_context(**kwargs):
+            self.assertEqual(kwargs["headless"], False)
+            self.assertEqual(kwargs["context_options"]["storage_state"], "account.json")
+            return browser, context
+
+        with patch(
+            "uploader.xiaohongshu_uploader.main.open_xhs_cloak_context",
+            new=fake_open_xhs_cloak_context,
+        ):
+            opened_browser, opened_context = asyncio.run(app.open_publish_context())
+
+        self.assertIs(opened_browser, browser)
+        self.assertIs(opened_context, context)
+
+    def test_click_publish_submit_uses_xhs_custom_publish_button(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        app.human = RecordingHuman()
+        page = PublishButtonPage()
+
+        asyncio.run(app.click_publish_submit(page, "发布"))
+
+        self.assertEqual(
+            page.wait_functions,
+            [(xhs_main.XHS_CUSTOM_PUBLISH_BUTTON_SELECTOR, xhs_main.XHS_PUBLISH_BUTTON_READY_TIMEOUT)],
+        )
+        click_action = next(action for action in app.human.actions if action[0] == "click")
+        self.assertEqual(click_action[1], "xhs-publish-btn")
+        self.assertEqual(click_action[2], 30000)
+        self.assertAlmostEqual(click_action[3]["x"], 146.4)
+        self.assertAlmostEqual(click_action[3]["y"], 24.0)
 
     def test_note_title_defaults_do_not_override_explicit_title(self):
         app = xhs_main.XiaoHongShuNote(

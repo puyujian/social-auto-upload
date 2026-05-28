@@ -7,12 +7,10 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+from typing import TYPE_CHECKING
 
-from patchright.async_api import Page
-from patchright.async_api import Playwright
-from patchright.async_api import async_playwright
-
-from conf import DEBUG_MODE, LOCAL_CHROME_HEADLESS, LOCAL_CHROME_PATH
+from conf import DEBUG_MODE
 from uploader.base_video import BaseVideoUploader
 from utils.base_social_media import set_init_script
 from utils.login_qrcode import build_login_qrcode_path
@@ -22,6 +20,11 @@ from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.human_behavior import HumanBehaviorModule
 from utils.log import xiaohongshu_logger
+
+if TYPE_CHECKING:
+    from playwright.async_api import Page
+else:
+    Page = Any
 
 XHS_LOGIN_URL = "https://creator.xiaohongshu.com/login"
 XHS_PUBLISH_VIDEO_URL = "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=video"
@@ -36,13 +39,17 @@ XHS_TOPIC_OPTION_SELECTOR = f"{XHS_TOPIC_CONTAINER_SELECTOR} .item"
 XHS_TOPIC_CONTAINER_TIMEOUT = 10000
 XHS_TOPIC_OPTION_TIMEOUT = 5000
 XHS_DESC_EDITOR_SELECTOR = 'p[data-placeholder*="输入正文描述"]'
+XHS_CLOAKBROWSER_BACKEND = "playwright"
+XHS_CUSTOM_PUBLISH_BUTTON_SELECTOR = 'xhs-publish-btn[is-publish="true"]'
 XHS_STABLE_CONTEXT_OPTIONS = {
     "viewport": {"width": 1536, "height": 864},
     "locale": "zh-CN",
     "timezone_id": "Asia/Shanghai",
     "permissions": ["geolocation"],
 }
-XHS_PUBLISH_RETRY_INTERVAL_SECONDS = 2
+XHS_PUBLISH_BUTTON_READY_TIMEOUT = 15 * 60 * 1000
+XHS_PUBLISH_RESULT_TIMEOUT = 90 * 1000
+XHS_CUSTOM_PUBLISH_SUBMIT_X_RATIO = 0.61
 
 
 def build_xhs_context_options(storage_state: str | os.PathLike | None = None) -> dict:
@@ -50,6 +57,53 @@ def build_xhs_context_options(storage_state: str | os.PathLike | None = None) ->
     if storage_state:
         options["storage_state"] = str(storage_state)
     return options
+
+
+class _ClosedCloakBrowser:
+    """兼容旧的 browser/context 关闭顺序，避免重复关闭时报错。"""
+
+    async def close(self) -> None:
+        return None
+
+
+def _load_cloakbrowser_launch_context_async():
+    try:
+        from cloakbrowser import launch_context_async
+    except ModuleNotFoundError as exc:
+        if exc.name == "cloakbrowser":
+            raise RuntimeError(
+                "小红书链路现在使用 CloakBrowser，请先安装依赖: uv pip install -e ."
+            ) from exc
+        raise
+    return launch_context_async
+
+
+async def open_xhs_cloak_context(
+    *,
+    headless: bool,
+    storage_state: str | os.PathLike | None = None,
+    context_options: dict[str, Any] | None = None,
+):
+    """使用 CloakBrowser 打开小红书上下文，并保留当前稳定画像参数。"""
+    launch_context_async = _load_cloakbrowser_launch_context_async()
+    options = dict(context_options or build_xhs_context_options(storage_state))
+
+    timezone = options.pop("timezone_id", None)
+    locale = options.pop("locale", None)
+    viewport = options.pop("viewport", None)
+
+    # CloakBrowser 官方说明 Patchright backend 会影响 add_init_script；
+    # 当前链路仍依赖统一初始化脚本，所以这里固定使用默认 Playwright backend。
+    context = await launch_context_async(
+        headless=headless,
+        backend=XHS_CLOAKBROWSER_BACKEND,
+        locale=locale,
+        timezone=timezone,
+        viewport=viewport,
+        **options,
+    )
+    context = await set_init_script(context)
+    return _ClosedCloakBrowser(), context
 
 
 def _msg(emoji: str, text: str) -> str:
@@ -195,36 +249,33 @@ async def cookie_auth(account_file, *, headless: bool = False):
     if not os.path.exists(account_file):
         return False
 
-    async with async_playwright() as playwright:
-        if LOCAL_CHROME_PATH:
-            browser = await playwright.chromium.launch(headless=headless, executable_path=LOCAL_CHROME_PATH)
-        else:
-            browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        try:
-            context = await browser.new_context(**build_xhs_context_options(account_file))
-            context = await set_init_script(context)
-            page = await context.new_page()
-            await page.goto(XHS_PUBLISH_VIDEO_URL)
-            await page.wait_for_timeout(3000)
+    browser, context = await open_xhs_cloak_context(headless=headless, storage_state=account_file)
+    try:
+        page = await context.new_page()
+        await page.goto(XHS_PUBLISH_VIDEO_URL)
+        await page.wait_for_timeout(3000)
 
-            if page.url.startswith(XHS_LOGIN_URL):
-                xiaohongshu_logger.info(_msg("🥹", "cookie 已失效，得重新登录一下"))
+        if page.url.startswith(XHS_LOGIN_URL):
+            xiaohongshu_logger.info(_msg("🥹", "cookie 已失效，得重新登录一下"))
+            return False
+
+        login_box = page.locator(XHS_LOGIN_BOX_SELECTOR).first
+        if await login_box.count():
+            try:
+                if await login_box.is_visible():
+                    xiaohongshu_logger.info(_msg("🥹", "页面仍然停留在登录二维码页，按 cookie 失效处理"))
+                    return False
+            except Exception:
                 return False
 
-            login_box = page.locator(XHS_LOGIN_BOX_SELECTOR).first
-            if await login_box.count():
-                try:
-                    if await login_box.is_visible():
-                        xiaohongshu_logger.info(_msg("🥹", "页面仍然停留在登录二维码页，按 cookie 失效处理"))
-                        return False
-                except Exception:
-                    return False
-
-            xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
-            return True
-        except Exception as exc:
-            xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
-            return False
+        xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
+        return True
+    except Exception as exc:
+        xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
+        return False
+    finally:
+        try:
+            await context.close()
         finally:
             await browser.close()
 
@@ -265,58 +316,57 @@ async def xiaohongshu_cookie_gen(
     account_path = Path(account_file)
     account_path.parent.mkdir(parents=True, exist_ok=True)
 
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(headless=headless, channel="chrome")
-        context = await browser.new_context(**build_xhs_context_options())
-        context = await set_init_script(context)
-        qrcode_path = None
-        qrcode_info = None
-        result = _build_login_result(False, "failed", "小红书登录失败", account_file)
+    browser, context = await open_xhs_cloak_context(headless=headless)
+    qrcode_path = None
+    qrcode_info = None
+    result = _build_login_result(False, "failed", "小红书登录失败", account_file)
+    try:
+        page = await context.new_page()
+        await page.goto(XHS_LOGIN_URL)
+        qrcode_info = await _save_xhs_qrcode(page, account_file, qrcode_callback=qrcode_callback)
+        qrcode_path = Path(qrcode_info["image_path"])
+        xiaohongshu_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
+
+        for _ in range(max_checks):
+            if await _is_xhs_login_completed(page):
+                await asyncio.sleep(2)
+                await context.storage_state(path=account_file)
+                if await cookie_auth(account_file, headless=headless):
+                    xiaohongshu_logger.success(_msg("🥳", "小红书扫码登录成功，小人开心收工"))
+                    result = _build_login_result(True, "success", "小红书扫码登录成功", account_file, qrcode_info, page.url)
+                else:
+                    result = _build_login_result(
+                        False,
+                        "cookie_invalid",
+                        "小红书扫码流程结束，但 cookie 校验失败",
+                        account_file,
+                        qrcode_info,
+                        page.url,
+                    )
+                return result
+
+            await asyncio.sleep(poll_interval)
+
+        result = _build_login_result(
+            False,
+            "timeout",
+            "等待小红书扫码登录超时",
+            account_file,
+            qrcode_info,
+            page.url,
+        )
+    except Exception as exc:
+        result = _build_login_result(False, "failed", str(exc), account_file, current_url=page.url if "page" in locals() else "")
+    finally:
+        if remove_qrcode_file(qrcode_path):
+            xiaohongshu_logger.info(_msg("🧹", f"临时二维码文件已清理: {qrcode_path}"))
+        if not result["success"]:
+            xiaohongshu_logger.error(_msg("😢", f"登录失败: {result['message']}"))
         try:
-            page = await context.new_page()
-            await page.goto(XHS_LOGIN_URL)
-            qrcode_info = await _save_xhs_qrcode(page, account_file, qrcode_callback=qrcode_callback)
-            qrcode_path = Path(qrcode_info["image_path"])
-            xiaohongshu_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
-
-            for _ in range(max_checks):
-                if await _is_xhs_login_completed(page):
-                    await asyncio.sleep(2)
-                    await context.storage_state(path=account_file)
-                    if await cookie_auth(account_file, headless=headless):
-                        xiaohongshu_logger.success(_msg("🥳", "小红书扫码登录成功，小人开心收工"))
-                        result = _build_login_result(True, "success", "小红书扫码登录成功", account_file, qrcode_info, page.url)
-                    else:
-                        result = _build_login_result(
-                            False,
-                            "cookie_invalid",
-                            "小红书扫码流程结束，但 cookie 校验失败",
-                            account_file,
-                            qrcode_info,
-                            page.url,
-                        )
-                    return result
-
-                await asyncio.sleep(poll_interval)
-
-            result = _build_login_result(
-                False,
-                "timeout",
-                "等待小红书扫码登录超时",
-                account_file,
-                qrcode_info,
-                page.url,
-            )
-        except Exception as exc:
-            result = _build_login_result(False, "failed", str(exc), account_file, current_url=page.url if "page" in locals() else "")
-        finally:
-            if remove_qrcode_file(qrcode_path):
-                xiaohongshu_logger.info(_msg("🧹", f"临时二维码文件已清理: {qrcode_path}"))
-            if not result["success"]:
-                xiaohongshu_logger.error(_msg("😢", f"登录失败: {result['message']}"))
             await context.close()
+        finally:
             await browser.close()
-        return result
+    return result
 
 
 class XiaoHongShuBaseUploader(BaseVideoUploader):
@@ -334,7 +384,6 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         self.publish_strategy = publish_strategy
         self.debug = debug
         self.date_format = "%Y年%m月%d日 %H:%M"
-        self.local_executable_path = LOCAL_CHROME_PATH
         self.headless = headless
         self.cookie_verified = cookie_verified
         self.human = HumanBehaviorModule()
@@ -347,11 +396,11 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
     def build_browser_context_options(self) -> dict:
         return build_xhs_context_options(self.account_file)
 
-    async def open_publish_context(self, playwright: Playwright):
-        browser = await playwright.chromium.launch(headless=self.headless, channel="chrome")
-        context = await browser.new_context(**self.build_browser_context_options())
-        context = await set_init_script(context)
-        return browser, context
+    async def open_publish_context(self):
+        return await open_xhs_cloak_context(
+            headless=self.headless,
+            context_options=self.build_browser_context_options(),
+        )
 
     async def goto_publish_page(self, page: Page, url: str) -> None:
         await self.human.goto(page, url)
@@ -362,12 +411,145 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
                 raise RuntimeError(f"cookie文件已失效，请先完成小红书登录: {self.account_file}")
             raise
 
-    async def human_click_locator(self, page: Page, locator, *, timeout: int = 10000) -> None:
+    async def human_click_locator(
+        self,
+        page: Page,
+        locator,
+        *,
+        timeout: int = 10000,
+        position: dict[str, float] | None = None,
+    ) -> None:
         try:
             await locator.scroll_into_view_if_needed()
         except Exception:
             pass
-        await self.human.click(page, locator=locator, timeout=timeout)
+        await self.human.click(page, locator=locator, position=position, timeout=timeout)
+
+    def publish_action_text(self) -> str:
+        if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
+            return "定时发布"
+        return "发布"
+
+    async def custom_publish_submit_position(self, locator) -> dict[str, float] | None:
+        box = await locator.bounding_box()
+        if not box:
+            return None
+
+        has_save_draft = (await locator.get_attribute("is-save-draft")) == "true"
+        x_ratio = XHS_CUSTOM_PUBLISH_SUBMIT_X_RATIO if has_save_draft else 0.5
+        return {
+            "x": min(max(1, box["width"] * x_ratio), max(1, box["width"] - 2)),
+            "y": min(max(1, box["height"] * 0.5), max(1, box["height"] - 2)),
+        }
+
+    async def click_publish_submit(self, page: Page, action_text: str) -> None:
+        xiaohongshu_logger.info(_msg("🧭", f"小人正在等待「{action_text}」按钮可提交"))
+        custom_button = page.locator(XHS_CUSTOM_PUBLISH_BUTTON_SELECTOR).first
+        if await custom_button.count():
+            await custom_button.wait_for(state="visible", timeout=30000)
+            await page.wait_for_function(
+                """
+                selector => {
+                    const el = document.querySelector(selector);
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    const visible = Boolean(rect.width || rect.height || el.getClientRects().length);
+                    return visible && el.getAttribute("submit-disabled") !== "true";
+                }
+                """,
+                arg=XHS_CUSTOM_PUBLISH_BUTTON_SELECTOR,
+                timeout=XHS_PUBLISH_BUTTON_READY_TIMEOUT,
+            )
+            position = await self.custom_publish_submit_position(custom_button)
+            await self.human_click_locator(page, custom_button, timeout=30000, position=position)
+            return
+
+        button = page.locator("button").filter(has_text=_exact_text_pattern(action_text)).first
+        await button.wait_for(state="visible", timeout=30000)
+        handle = await button.element_handle()
+        if handle:
+            await page.wait_for_function(
+                """
+                el => {
+                    const className = String(el.className || "");
+                    return !el.disabled
+                        && el.getAttribute("aria-disabled") !== "true"
+                        && !className.includes("disabled");
+                }
+                """,
+                arg=handle,
+                timeout=XHS_PUBLISH_BUTTON_READY_TIMEOUT,
+            )
+        await self.human_click_locator(page, button, timeout=30000)
+
+    async def click_publish_confirmation_if_present(self, page: Page) -> None:
+        modal = page.locator("div.d-modal:visible, [role='dialog']:visible").filter(
+            has_text=re.compile("发布|提交")
+        ).first
+        if not await modal.count():
+            return
+
+        for label in ("确认发布", "继续发布"):
+            confirm_button = modal.locator("button").filter(has_text=_exact_text_pattern(label)).first
+            if await confirm_button.count():
+                xiaohongshu_logger.info(_msg("🧭", f"小人确认弹窗: {label}"))
+                await self.human_click_locator(page, confirm_button, timeout=5000)
+                await page.wait_for_timeout(500)
+                return
+
+    async def collect_publish_feedback(self, page: Page) -> str:
+        selectors = [
+            ".d-message",
+            ".d-toast",
+            ".d-modal",
+            "[role='alert']",
+            "[role='dialog']",
+            "[class*='toast']",
+            "[class*='message']",
+        ]
+        snippets: list[str] = []
+        for selector in selectors:
+            try:
+                texts = await page.locator(selector).evaluate_all(
+                    """
+                    els => els
+                        .filter(el => {
+                            const rect = el.getBoundingClientRect();
+                            return Boolean(rect.width || rect.height || el.getClientRects().length);
+                        })
+                        .map(el => (el.innerText || el.textContent || "").trim().replace(/\\s+/g, " "))
+                        .filter(Boolean)
+                        .slice(0, 5)
+                    """
+                )
+            except Exception:
+                continue
+            for text in texts:
+                if text not in snippets:
+                    snippets.append(text[:160])
+        return "；".join(snippets[:6])
+
+    async def save_publish_failure_screenshot(self, page: Page) -> str:
+        screenshot_path = Path("logs") / f"xiaohongshu_publish_failed_{datetime.now():%Y%m%d_%H%M%S}.png"
+        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(screenshot_path), full_page=True)
+        return str(screenshot_path)
+
+    async def submit_publish_and_wait(self, page: Page, success_message: str) -> None:
+        action_text = self.publish_action_text()
+        await self.click_publish_submit(page, action_text)
+        await self.click_publish_confirmation_if_present(page)
+        try:
+            await page.wait_for_url(XHS_PUBLISH_SUCCESS_URL_PATTERN, timeout=XHS_PUBLISH_RESULT_TIMEOUT)
+        except Exception as exc:
+            feedback = await self.collect_publish_feedback(page)
+            screenshot_path = ""
+            if self.debug:
+                screenshot_path = await self.save_publish_failure_screenshot(page)
+                xiaohongshu_logger.warning(_msg("😵", f"发布失败截图已保存: {screenshot_path}"))
+            detail = feedback or f"当前页面仍停留在 {page.url}"
+            raise RuntimeError(f"{action_text}后未进入成功页: {detail}") from exc
+        xiaohongshu_logger.success(_msg("🥳", success_message))
 
     async def click_contenteditable_field(self, page: Page, locator, *, timeout: int = 10000):
         field = locator.first
@@ -741,29 +923,13 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time_xiaohongshu(page, self.publish_date)
 
-        while True:
-            try:
-                if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
-                    await self.human_click_locator(page, page.locator('button:has-text("定时发布")').first)
-                else:
-                    await self.human_click_locator(page, page.locator('button:has-text("发布")').first)
-                await page.wait_for_url(
-                    "https://creator.xiaohongshu.com/publish/success?**",
-                    timeout=3000
-                )
-                xiaohongshu_logger.success(_msg("🥳", "视频发布成功，小人开心收工"))
-                break
-            except Exception:
-                xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布视频"))
-                if self.debug:
-                    await page.screenshot(full_page=True)
-                await asyncio.sleep(XHS_PUBLISH_RETRY_INTERVAL_SECONDS)
+        await self.submit_publish_and_wait(page, "视频发布成功，小人开心收工")
 
-    async def upload(self, playwright: Playwright) -> None:
+    async def upload(self) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、视频文件、封面和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "上传前检查通过"))
-        browser, context = await self.open_publish_context(playwright)
+        browser, context = await self.open_publish_context()
 
         try:
             page = await context.new_page()
@@ -776,8 +942,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
             await browser.close()
 
     async def xiaohongshu_upload_video(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()
 
     async def main(self):
         await self.xiaohongshu_upload_video()
@@ -859,29 +1024,13 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED and self.publish_date != 0:
             await self.set_schedule_time_xiaohongshu(page, self.publish_date)
 
-        while True:
-            try:
-                if self.publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
-                    await self.human_click_locator(page, page.locator('button:has-text("定时发布")').first)
-                else:
-                    await self.human_click_locator(page, page.locator('button:has-text("发布")').first)
-                await page.wait_for_url(
-                    XHS_PUBLISH_SUCCESS_URL_PATTERN,
-                    timeout=3000
-                )
-                xiaohongshu_logger.success(_msg("🥳", "图文发布成功，小人开心收工"))
-                break
-            except Exception:
-                xiaohongshu_logger.info(_msg("🏃", "小人正在冲刺发布图文"))
-                if self.debug:
-                    await page.screenshot(full_page=True)
-                await asyncio.sleep(XHS_PUBLISH_RETRY_INTERVAL_SECONDS)
+        await self.submit_publish_and_wait(page, "图文发布成功，小人开心收工")
 
-    async def upload(self, playwright: Playwright) -> None:
+    async def upload(self) -> None:
         xiaohongshu_logger.info(_msg("🧍", "小人先检查 cookie、图片和发布时间"))
         await self.validate_upload_args()
         xiaohongshu_logger.info(_msg("🥳", "图文上传前检查通过"))
-        browser, context = await self.open_publish_context(playwright)
+        browser, context = await self.open_publish_context()
 
         try:
             page = await context.new_page()
@@ -894,8 +1043,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
             await browser.close()
 
     async def xiaohongshu_upload_note(self):
-        async with async_playwright() as playwright:
-            await self.upload(playwright)
+        await self.upload()
 
     async def main(self):
         await self.xiaohongshu_upload_note()
