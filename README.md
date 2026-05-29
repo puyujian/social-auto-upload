@@ -133,7 +133,7 @@ AI的发展毋庸置疑，希望你遇到这种安装和使用，不要再怯场
 - 各平台 uploader 的结构收敛
 - CLI 统一接入
 - 面向 OpenClaw、Codex、 Claude Code 等工具的 skill 化
-- 小红书使用 `CloakBrowser`，其它浏览器链路继续使用 `patchright`
+- 抖音、快手、小红书使用 `CloakBrowser`，其它旧浏览器链路继续使用原有实现
 - CLI 保留有头/无头参数，按平台发布稳定性选择默认值
 
 “无头模式（headless）”，指的是浏览器在后台运行，不弹出可见窗口，但自动化流程仍然会照常执行。这样更适合 CLI、服务端、自动任务和 agent 场景。

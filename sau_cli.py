@@ -290,8 +290,7 @@ async def upload_note(request: DouyinNoteUploadRequest) -> Path:
 
 async def upload_kuaishou_video(request: KuaishouVideoUploadRequest) -> Path:
     account_file = resolve_account_file("kuaishou", request.account_name)
-    is_ready = await ks_setup(str(account_file), handle=False)
-    if not is_ready:
+    if not account_file.exists():
         raise RuntimeError(
             f"Kuaishou cookie is missing or expired: {account_file}. Run `sau kuaishou login --account {request.account_name}` first."
         )
@@ -314,8 +313,7 @@ async def upload_kuaishou_video(request: KuaishouVideoUploadRequest) -> Path:
 
 async def upload_kuaishou_note(request: KuaishouNoteUploadRequest) -> Path:
     account_file = resolve_account_file("kuaishou", request.account_name)
-    is_ready = await ks_setup(str(account_file), handle=False)
-    if not is_ready:
+    if not account_file.exists():
         raise RuntimeError(
             f"Kuaishou cookie is missing or expired: {account_file}. Run `sau kuaishou login --account {request.account_name}` first."
         )

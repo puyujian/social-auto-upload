@@ -35,6 +35,8 @@ class BaseVideoUploader:
             raise ValueError(
                 f"不支持的视频格式: {path.suffix}，当前支持: {', '.join(sorted(cls.SUPPORTED_VIDEO_EXTENSIONS))}"
             )
+        if path.stat().st_size <= 0:
+            raise ValueError(f"视频文件为空，无法发布: {path}")
 
         return path
 

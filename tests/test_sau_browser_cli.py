@@ -246,6 +246,66 @@ class BrowserCliDispatchTests(unittest.TestCase):
         mock_setup.assert_not_awaited()
         self.assertTrue(FakeNoteUploader.kwargs["cookie_verified"])
 
+    def test_kuaishou_video_upload_does_not_open_cookie_probe_before_publish(self):
+        class FakeVideoUploader:
+            kwargs = None
+
+            def __init__(self, **kwargs):
+                FakeVideoUploader.kwargs = kwargs
+
+            async def main(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "kuaishou_creator.json"
+            account_file.write_text("{}")
+            request = sau_cli.KuaishouVideoUploadRequest(
+                account_name="creator",
+                video_file=Path("demo.mp4"),
+                title="视频标题",
+                description="视频简介",
+                tags=["测试"],
+                publish_date=0,
+            )
+
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.ks_setup", new=AsyncMock()) as mock_setup:
+                    with patch("sau_cli.KSVideo", FakeVideoUploader):
+                        asyncio.run(sau_cli.upload_kuaishou_video(request))
+
+        mock_setup.assert_not_awaited()
+        self.assertEqual(FakeVideoUploader.kwargs["account_file"], str(account_file))
+
+    def test_kuaishou_note_upload_does_not_open_cookie_probe_before_publish(self):
+        class FakeNoteUploader:
+            kwargs = None
+
+            def __init__(self, **kwargs):
+                FakeNoteUploader.kwargs = kwargs
+
+            async def main(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "kuaishou_creator.json"
+            account_file.write_text("{}")
+            request = sau_cli.KuaishouNoteUploadRequest(
+                account_name="creator",
+                image_files=[Path("demo.png")],
+                title="图文标题",
+                note="图文正文",
+                tags=["测试"],
+                publish_date=0,
+            )
+
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.ks_setup", new=AsyncMock()) as mock_setup:
+                    with patch("sau_cli.KSNote", FakeNoteUploader):
+                        asyncio.run(sau_cli.upload_kuaishou_note(request))
+
+        mock_setup.assert_not_awaited()
+        self.assertEqual(FakeNoteUploader.kwargs["account_file"], str(account_file))
+
 
 if __name__ == "__main__":
     unittest.main()

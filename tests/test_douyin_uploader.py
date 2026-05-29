@@ -41,6 +41,175 @@ class FakeLocator:
         return FakeLocator()
 
 
+class DummyBrowser:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+class DummyContext:
+    def __init__(self):
+        self.init_script_applied = False
+
+    async def add_init_script(self, **kwargs):
+        self.init_script_applied = True
+
+    async def close(self):
+        return None
+
+
+class FakeFileChooser:
+    def __init__(self, page):
+        self.page = page
+
+    async def set_files(self, files):
+        self.page.file_chooser_files.append(files)
+
+
+class FakeFileChooserContext:
+    def __init__(self, page):
+        self.page = page
+        self.file_chooser = FakeFileChooser(page)
+
+    @property
+    def value(self):
+        async def _value():
+            return self.file_chooser
+
+        return _value()
+
+    async def __aenter__(self):
+        self.page.file_chooser_armed = True
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.page.file_chooser_armed = False
+
+
+class VideoUploadButtonLocator(FakeLocator):
+    def __init__(self, page):
+        super().__init__(count=1, visible=True, on_click=page._click_upload_button)
+
+
+class VideoUploadInputLocator(FakeLocator):
+    def __init__(self, page):
+        super().__init__(count=1, visible=False)
+        self.page = page
+
+    async def wait_for(self, state="visible", timeout=None):
+        self.page.input_waits.append((state, timeout))
+
+    async def set_input_files(self, files):
+        self.page.input_files.append(files)
+
+
+class VideoUploadPage:
+    def __init__(self, *, button_opens_file_chooser=True, guide_visible=False):
+        self.button_opens_file_chooser = button_opens_file_chooser
+        self.file_chooser_armed = False
+        self.file_chooser_files = []
+        self.input_files = []
+        self.input_waits = []
+        self.screenshots = []
+        self.upload_button = VideoUploadButtonLocator(self)
+        self.upload_input = VideoUploadInputLocator(self)
+        self.guide_button = FakeLocator(count=1 if guide_visible else 0, visible=guide_visible, on_click=self._dismiss_guide)
+
+    def _dismiss_guide(self):
+        self.guide_button._count = 0
+        self.guide_button._visible = False
+
+    def _click_upload_button(self):
+        if not self.button_opens_file_chooser or not self.file_chooser_armed:
+            raise TimeoutError("file chooser did not open")
+
+    def expect_file_chooser(self, timeout=5000):
+        if not self.button_opens_file_chooser:
+            raise TimeoutError("file chooser did not open")
+        return FakeFileChooserContext(self)
+
+    def get_by_text(self, text, exact=False):
+        if text == douyin_main.DOUYIN_VIDEO_UPLOAD_BUTTON_TEXT:
+            return self.upload_button
+        if text in douyin_main.DOUYIN_UPLOAD_GUIDE_DISMISS_TEXTS:
+            return self.guide_button
+        return FakeLocator()
+
+    def get_by_role(self, role, name=None, exact=False):
+        if role == "button" and name in douyin_main.DOUYIN_UPLOAD_GUIDE_DISMISS_TEXTS:
+            return self.guide_button
+        return FakeLocator()
+
+    def locator(self, selector):
+        if selector == douyin_main.DOUYIN_VIDEO_UPLOAD_INPUT_SELECTOR:
+            return self.upload_input
+        return FakeLocator()
+
+    async def screenshot(self, **kwargs):
+        self.screenshots.append(kwargs)
+
+
+class DouyinCloakContextTests(unittest.TestCase):
+    def test_build_douyin_context_options_can_omit_storage_state_for_login(self):
+        options = douyin_main.build_douyin_context_options()
+
+        self.assertNotIn("storage_state", options)
+        self.assertEqual(options["permissions"], ["geolocation"])
+
+    def test_open_douyin_cloak_context_maps_options_to_cloakbrowser(self):
+        captured = {}
+        context = DummyContext()
+
+        async def fake_launch_context_async(**kwargs):
+            captured.update(kwargs)
+            return context
+
+        with mock.patch(
+            "uploader.douyin_uploader.main._load_cloakbrowser_launch_context_async",
+            return_value=fake_launch_context_async,
+        ):
+            browser, opened_context = asyncio.run(
+                douyin_main.open_douyin_cloak_context(headless=True, storage_state="account.json")
+            )
+
+        self.assertIs(opened_context, context)
+        self.assertIsInstance(browser, douyin_main._ClosedCloakBrowser)
+        self.assertTrue(context.init_script_applied)
+        self.assertEqual(captured["headless"], True)
+        self.assertEqual(captured["backend"], "playwright")
+        self.assertEqual(captured["storage_state"], "account.json")
+        self.assertEqual(captured["permissions"], ["geolocation"])
+
+    def test_video_open_publish_context_uses_cloakbrowser_adapter(self):
+        app = douyin_main.DouYinVideo(
+            title="title",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+            headless=False,
+        )
+        browser = DummyBrowser()
+        context = DummyContext()
+
+        async def fake_open_douyin_cloak_context(**kwargs):
+            self.assertEqual(kwargs["headless"], False)
+            self.assertEqual(kwargs["context_options"]["storage_state"], "account.json")
+            self.assertEqual(kwargs["context_options"]["permissions"], ["geolocation"])
+            return browser, context
+
+        with mock.patch(
+            "uploader.douyin_uploader.main.open_douyin_cloak_context",
+            new=fake_open_douyin_cloak_context,
+        ):
+            opened_browser, opened_context = asyncio.run(app.open_publish_context())
+
+        self.assertIs(opened_browser, browser)
+        self.assertIs(opened_context, context)
+
+
 class DeclarationSelectionModalLocator(FakeLocator):
     def __init__(self, page):
         super().__init__(
@@ -71,6 +240,16 @@ class AuthStatePage:
         if text in self.visible_texts:
             return FakeLocator(count=1, visible=True)
         return FakeLocator()
+
+
+class VideoPublishProbePage(AuthStatePage):
+    def __init__(self, url, visible_texts=None):
+        super().__init__(visible_texts or [])
+        self.url = url
+        self.screenshots = []
+
+    async def screenshot(self, **kwargs):
+        self.screenshots.append(kwargs)
 
 
 class DeclarationModalPage:
@@ -239,6 +418,86 @@ class DouyinAuthStateTests(unittest.TestCase):
         state = asyncio.run(douyin_main._douyin_auth_state(page))
 
         self.assertEqual(state, "unknown")
+
+
+class DouyinVideoPublishPageWaitTests(unittest.TestCase):
+    def test_accepts_version_2_publish_page(self):
+        uploader = douyin_main.DouYinBaseUploader(0, "account.json")
+        page = VideoPublishProbePage(
+            "https://creator.douyin.com/creator-micro/content/post/video?enter_from=publish_page"
+        )
+
+        result = asyncio.run(uploader.wait_for_video_publish_page(page, timeout_seconds=1))
+
+        self.assertEqual(result, "version_2")
+
+    def test_rejects_login_redirect_without_waiting_for_global_timeout(self):
+        uploader = douyin_main.DouYinBaseUploader(0, "account.json")
+        page = VideoPublishProbePage(
+            "https://creator.douyin.com/creator-micro/login",
+            visible_texts=["扫码登录"],
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "登录状态已失效"):
+            asyncio.run(uploader.wait_for_video_publish_page(page, timeout_seconds=60))
+
+        self.assertTrue(page.screenshots)
+
+    def test_times_out_when_upload_page_never_enters_editor(self):
+        uploader = douyin_main.DouYinBaseUploader(0, "account.json")
+        page = VideoPublishProbePage(douyin_main.DOUYIN_UPLOAD_URL)
+
+        with self.assertRaisesRegex(RuntimeError, "等待抖音视频发布编辑页超时"):
+            asyncio.run(uploader.wait_for_video_publish_page(page, timeout_seconds=1))
+
+        self.assertTrue(page.screenshots)
+
+
+class DouyinVideoUploadInputTests(unittest.TestCase):
+    def test_uploads_video_through_file_chooser_button(self):
+        uploader = douyin_main.DouYinVideo(
+            title="title",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        page = VideoUploadPage(button_opens_file_chooser=True)
+
+        asyncio.run(uploader.upload_video_file_from_upload_page(page, guide_timeout_seconds=0))
+
+        self.assertEqual(page.file_chooser_files, ["video.mp4"])
+        self.assertEqual(page.input_files, [])
+
+    def test_falls_back_to_video_input_when_button_does_not_open_file_chooser(self):
+        uploader = douyin_main.DouYinVideo(
+            title="title",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        page = VideoUploadPage(button_opens_file_chooser=False)
+
+        asyncio.run(uploader.upload_video_file_from_upload_page(page, guide_timeout_seconds=0))
+
+        self.assertEqual(page.file_chooser_files, [])
+        self.assertEqual(page.input_files, ["video.mp4"])
+
+    def test_dismisses_upload_page_guide_before_uploading(self):
+        uploader = douyin_main.DouYinVideo(
+            title="title",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        page = VideoUploadPage(button_opens_file_chooser=True, guide_visible=True)
+
+        asyncio.run(uploader.upload_video_file_from_upload_page(page, guide_timeout_seconds=0))
+
+        self.assertEqual(page.guide_button.clicks, 1)
+        self.assertEqual(page.file_chooser_files, ["video.mp4"])
 
 
 class DouyinDeclarationModalTests(unittest.TestCase):

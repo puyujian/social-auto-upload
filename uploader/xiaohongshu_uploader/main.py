@@ -47,6 +47,7 @@ XHS_STABLE_CONTEXT_OPTIONS = {
     "timezone_id": "Asia/Shanghai",
     "permissions": ["geolocation"],
 }
+XHS_PUBLISH_NAVIGATION_TIMEOUT = 60 * 1000
 XHS_PUBLISH_BUTTON_READY_TIMEOUT = 15 * 60 * 1000
 XHS_PUBLISH_RESULT_TIMEOUT = 90 * 1000
 XHS_CUSTOM_PUBLISH_SUBMIT_X_RATIO = 0.61
@@ -403,9 +404,11 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         )
 
     async def goto_publish_page(self, page: Page, url: str) -> None:
-        await self.human.goto(page, url)
+        # 小红书发布页偶尔长期占用导航生命周期；先确认主文档已提交，
+        # 后续再由上传框、标题框等业务元素判断页面是否真的可操作。
+        await self.human.goto(page, url, wait_until="commit")
         try:
-            await page.wait_for_url(url, timeout=15000)
+            await page.wait_for_url(url, wait_until="commit", timeout=XHS_PUBLISH_NAVIGATION_TIMEOUT)
         except Exception:
             if page.url.startswith(XHS_LOGIN_URL):
                 raise RuntimeError(f"cookie文件已失效，请先完成小红书登录: {self.account_file}")

@@ -172,6 +172,15 @@ class RecordingPage:
         return None
 
 
+class NavigationPage:
+    def __init__(self, url):
+        self.url = url
+        self.waits = []
+
+    async def wait_for_url(self, url, **kwargs):
+        self.waits.append((url, kwargs))
+
+
 class PublishButtonPage:
     def __init__(self):
         self.keyboard = RecordingKeyboard()
@@ -201,8 +210,8 @@ class RecordingHuman:
     async def apply_fingerprint_obfuscation(self, page, context):
         self.actions.append(("fingerprint", page, context))
 
-    async def goto(self, page, url):
-        self.actions.append(("goto", url))
+    async def goto(self, page, url, **kwargs):
+        self.actions.append(("goto", url, kwargs))
 
     async def click(self, page, selector=None, *, locator=None, timeout=None, **kwargs):
         target = locator.name if locator is not None else selector
@@ -538,6 +547,33 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertIn(("press", "Backspace"), page.keyboard.actions)
         self.assertIn(("click", "手作交流群-container", 10000, None), app.human.actions)
         self.assertNotIn(("click",), page.option.actions)
+
+    def test_goto_publish_page_uses_commit_navigation_wait(self):
+        app = xhs_main.XiaoHongShuVideo(
+            title="标题内容",
+            file_path="demo.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="account.json",
+        )
+        app.human = RecordingHuman()
+        page = NavigationPage(xhs_main.XHS_PUBLISH_VIDEO_URL)
+
+        asyncio.run(app.goto_publish_page(page, xhs_main.XHS_PUBLISH_VIDEO_URL))
+
+        self.assertEqual(
+            app.human.actions,
+            [("goto", xhs_main.XHS_PUBLISH_VIDEO_URL, {"wait_until": "commit"})],
+        )
+        self.assertEqual(
+            page.waits,
+            [
+                (
+                    xhs_main.XHS_PUBLISH_VIDEO_URL,
+                    {"wait_until": "commit", "timeout": xhs_main.XHS_PUBLISH_NAVIGATION_TIMEOUT},
+                )
+            ],
+        )
 
     def test_apply_human_behavior_uses_page_and_context(self):
         app = xhs_main.XiaoHongShuVideo(
