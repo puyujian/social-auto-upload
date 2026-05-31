@@ -85,6 +85,33 @@ class BrowserCliParserTests(unittest.TestCase):
 
         self.assertFalse(args.headless)
         self.assertEqual(args.group_chat, "手作交流群")
+        self.assertEqual(args.publish_mode, "browser")
+        self.assertFalse(args.confirm_protocol_publish)
+
+    def test_xiaohongshu_upload_video_accepts_protocol_publish_mode(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            video_path = Path(tmp_dir) / "demo.mp4"
+            video_path.write_bytes(b"video")
+
+            parser = sau_cli.build_parser()
+            args = parser.parse_args(
+                [
+                    "xiaohongshu",
+                    "upload-video",
+                    "--account",
+                    "creator",
+                    "--file",
+                    str(video_path),
+                    "--title",
+                    "视频标题",
+                    "--publish-mode",
+                    "protocol",
+                    "--confirm-protocol-publish",
+                ]
+            )
+
+        self.assertEqual(args.publish_mode, "protocol")
+        self.assertTrue(args.confirm_protocol_publish)
 
     def test_xiaohongshu_upload_note_accepts_headless(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -150,6 +177,8 @@ class BrowserCliDispatchTests(unittest.TestCase):
             schedule=0,
             thumbnail=None,
             group_chat="手作交流群",
+            publish_mode="browser",
+            confirm_protocol_publish=False,
             debug=False,
             headless=False,
         )
@@ -160,6 +189,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.title, "视频标题")
         self.assertEqual(request.description, "视频简介")
         self.assertEqual(request.group_chat, "手作交流群")
+        self.assertEqual(request.publish_mode, "browser")
         self.assertFalse(request.headless)
 
     def test_dispatch_xiaohongshu_upload_note_uses_default_headed_request(self):
@@ -173,6 +203,8 @@ class BrowserCliDispatchTests(unittest.TestCase):
             tags="测试,图文",
             schedule=0,
             group_chat="图文群",
+            publish_mode="browser",
+            confirm_protocol_publish=False,
             debug=False,
             headless=False,
         )
@@ -183,8 +215,137 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.title, "图文标题")
         self.assertEqual(request.note, "图文正文")
         self.assertEqual(request.group_chat, "图文群")
+        self.assertEqual(request.publish_mode, "browser")
         self.assertFalse(request.headless)
         self.assertEqual(len(request.image_files), 2)
+
+    def test_dispatch_xiaohongshu_protocol_request_includes_mode(self):
+        args = Namespace(
+            platform="xiaohongshu",
+            action="upload-video",
+            account="creator",
+            file=Path("demo.mp4"),
+            title="视频标题",
+            desc="视频简介",
+            tags="测试,视频",
+            schedule=0,
+            thumbnail=None,
+            group_chat="",
+            publish_mode="protocol",
+            confirm_protocol_publish=True,
+            debug=False,
+            headless=False,
+        )
+        with patch("sau_cli.upload_xiaohongshu_video", new=AsyncMock()) as mock_upload:
+            asyncio.run(sau_cli.dispatch(args))
+
+        request = mock_upload.await_args.args[0]
+        self.assertEqual(request.publish_mode, "protocol")
+        self.assertTrue(request.confirm_protocol_publish)
+
+    def test_xiaohongshu_protocol_video_allows_group_chat(self):
+        class FakeProtocol:
+            calls = []
+
+            def __init__(self, account_file):
+                self.account_file = account_file
+
+            def publish_video(self, **kwargs):
+                FakeProtocol.calls.append(kwargs)
+                return {"success": True}
+
+        request = sau_cli.XiaohongshuVideoUploadRequest(
+            account_name="creator",
+            video_file=Path("demo.mp4"),
+            title="视频标题",
+            description="视频简介",
+            tags=["测试"],
+            publish_date=0,
+            group_chat="手作交流群",
+            publish_mode="protocol",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}", encoding="utf-8")
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.XhsCreatorProtocol", FakeProtocol):
+                    asyncio.run(sau_cli.upload_xiaohongshu_video(request))
+
+        self.assertEqual(FakeProtocol.calls[0]["group_chat"], "手作交流群")
+
+    def test_xiaohongshu_protocol_video_rejects_unverified_thumbnail(self):
+        request = sau_cli.XiaohongshuVideoUploadRequest(
+            account_name="creator",
+            video_file=Path("demo.mp4"),
+            title="视频标题",
+            description="视频简介",
+            tags=["测试"],
+            publish_date=0,
+            thumbnail_file=Path("cover.png"),
+            publish_mode="protocol",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}", encoding="utf-8")
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with self.assertRaisesRegex(RuntimeError, "封面"):
+                    asyncio.run(sau_cli.upload_xiaohongshu_video(request))
+
+    def test_xiaohongshu_protocol_video_rejects_schedule(self):
+        request = sau_cli.XiaohongshuVideoUploadRequest(
+            account_name="creator",
+            video_file=Path("demo.mp4"),
+            title="视频标题",
+            description="视频简介",
+            tags=["测试"],
+            publish_date=sau_cli.datetime(2026, 6, 1, 12, 0),
+            publish_strategy=sau_cli.XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED,
+            publish_mode="protocol",
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}", encoding="utf-8")
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with self.assertRaisesRegex(RuntimeError, "定时"):
+                    asyncio.run(sau_cli.upload_xiaohongshu_video(request))
+
+    def test_xiaohongshu_protocol_video_calls_protocol_module(self):
+        class FakeProtocol:
+            kwargs = None
+            calls = []
+
+            def __init__(self, account_file):
+                FakeProtocol.kwargs = {"account_file": account_file}
+
+            def publish_video(self, **kwargs):
+                FakeProtocol.calls.append(kwargs)
+                return {"success": True}
+
+        request = sau_cli.XiaohongshuVideoUploadRequest(
+            account_name="creator",
+            video_file=Path("demo.mp4"),
+            title="视频标题",
+            description="视频简介",
+            tags=["测试"],
+            publish_date=0,
+            publish_mode="protocol",
+            confirm_protocol_publish=True,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            account_file = Path(tmp_dir) / "xiaohongshu_creator.json"
+            account_file.write_text("{}", encoding="utf-8")
+            with patch("sau_cli.resolve_account_file", return_value=account_file):
+                with patch("sau_cli.XhsCreatorProtocol", FakeProtocol):
+                    asyncio.run(sau_cli.upload_xiaohongshu_video(request))
+
+        self.assertEqual(FakeProtocol.kwargs["account_file"], account_file)
+        self.assertEqual(FakeProtocol.calls[0]["title"], "视频标题")
+        self.assertEqual(FakeProtocol.calls[0]["group_chat"], "")
+        self.assertTrue(FakeProtocol.calls[0]["confirm_publish"])
 
     def test_xiaohongshu_video_upload_does_not_open_cookie_probe_before_publish(self):
         class FakeVideoUploader:

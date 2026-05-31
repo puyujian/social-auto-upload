@@ -34,8 +34,11 @@ from uploader.xiaohongshu_uploader.main import (
     cookie_auth as xiaohongshu_cookie_auth,
     xiaohongshu_setup,
 )
+from uploader.xiaohongshu_uploader.protocol import XhsCreatorProtocol
 
 SCHEDULE_FORMAT = "%Y-%m-%d %H:%M"
+XIAOHONGSHU_PUBLISH_MODE_BROWSER = "browser"
+XIAOHONGSHU_PUBLISH_MODE_PROTOCOL = "protocol"
 
 
 @dataclass(slots=True)
@@ -105,6 +108,8 @@ class XiaohongshuVideoUploadRequest:
     thumbnail_file: Path | None = None
     group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
+    publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
+    confirm_protocol_publish: bool = False
     debug: bool = True
     headless: bool = False
 
@@ -119,6 +124,8 @@ class XiaohongshuNoteUploadRequest:
     publish_date: datetime | int
     group_chat: str = ""
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
+    publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
+    confirm_protocol_publish: bool = False
     debug: bool = True
     headless: bool = False
 
@@ -340,6 +347,23 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
             f"Xiaohongshu cookie is missing or expired: {account_file}. Run `sau xiaohongshu login --account {request.account_name}` first."
         )
 
+    if request.publish_mode == XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
+        validate_xiaohongshu_protocol_request(
+            publish_strategy=request.publish_strategy,
+            group_chat=request.group_chat,
+            thumbnail_file=request.thumbnail_file,
+        )
+        protocol = XhsCreatorProtocol(account_file)
+        protocol.publish_video(
+            video_file=request.video_file,
+            title=request.title,
+            description=request.description,
+            tags=request.tags,
+            group_chat=request.group_chat,
+            confirm_publish=request.confirm_protocol_publish,
+        )
+        return account_file
+
     app = XiaoHongShuVideo(
         title=request.title,
         file_path=str(request.video_file),
@@ -365,6 +389,23 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
             f"Xiaohongshu cookie is missing or expired: {account_file}. Run `sau xiaohongshu login --account {request.account_name}` first."
         )
 
+    if request.publish_mode == XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
+        validate_xiaohongshu_protocol_request(
+            publish_strategy=request.publish_strategy,
+            group_chat=request.group_chat,
+            thumbnail_file=None,
+        )
+        protocol = XhsCreatorProtocol(account_file)
+        protocol.publish_note(
+            image_files=[str(path) for path in request.image_files],
+            title=request.title,
+            note=request.note,
+            tags=request.tags,
+            group_chat=request.group_chat,
+            confirm_publish=request.confirm_protocol_publish,
+        )
+        return account_file
+
     app = XiaoHongShuNote(
         image_paths=[str(path) for path in request.image_files],
         title=request.title,
@@ -381,6 +422,18 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
     )
     await app.main()
     return account_file
+
+
+def validate_xiaohongshu_protocol_request(
+    *,
+    publish_strategy: str,
+    group_chat: str,
+    thumbnail_file: Path | None,
+) -> None:
+    if publish_strategy == XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED:
+        raise RuntimeError("小红书协议发布暂未实测支持定时发布，请改用浏览器发布模式")
+    if thumbnail_file is not None:
+        raise RuntimeError("小红书协议发布暂未实测支持外部封面，请改用浏览器发布模式")
 
 
 async def upload_bilibili_video(request: BilibiliVideoUploadRequest) -> Path:
@@ -527,6 +580,17 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_video_parser.add_argument("--thumbnail", type=existing_file_path, help="Optional thumbnail path")
     xiaohongshu_upload_video_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
+    xiaohongshu_upload_video_parser.add_argument(
+        "--publish-mode",
+        choices=(XIAOHONGSHU_PUBLISH_MODE_BROWSER, XIAOHONGSHU_PUBLISH_MODE_PROTOCOL),
+        default=XIAOHONGSHU_PUBLISH_MODE_BROWSER,
+        help="Xiaohongshu publish mode. Protocol mode blocks unverified platform features.",
+    )
+    xiaohongshu_upload_video_parser.add_argument(
+        "--confirm-protocol-publish",
+        action="store_true",
+        help="Allow protocol mode to call the final public publish API.",
+    )
     add_runtime_flags(xiaohongshu_upload_video_parser, default_headless=False)
 
     xiaohongshu_upload_note_parser = xiaohongshu_actions.add_parser("upload-note", help="Upload one note to Xiaohongshu")
@@ -537,6 +601,17 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_note_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     xiaohongshu_upload_note_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_note_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
+    xiaohongshu_upload_note_parser.add_argument(
+        "--publish-mode",
+        choices=(XIAOHONGSHU_PUBLISH_MODE_BROWSER, XIAOHONGSHU_PUBLISH_MODE_PROTOCOL),
+        default=XIAOHONGSHU_PUBLISH_MODE_BROWSER,
+        help="Xiaohongshu publish mode. Protocol mode blocks unverified platform features.",
+    )
+    xiaohongshu_upload_note_parser.add_argument(
+        "--confirm-protocol-publish",
+        action="store_true",
+        help="Allow protocol mode to call the final public publish API.",
+    )
     add_runtime_flags(xiaohongshu_upload_note_parser, default_headless=False)
 
     bilibili_parser = platform_parsers.add_parser("bilibili", help="Bilibili operations")
@@ -705,6 +780,8 @@ async def dispatch(args: argparse.Namespace) -> int:
                 thumbnail_file=args.thumbnail,
                 group_chat=getattr(args, "group_chat", ""),
                 publish_strategy=publish_strategy,
+                publish_mode=args.publish_mode,
+                confirm_protocol_publish=args.confirm_protocol_publish,
                 debug=args.debug,
                 headless=args.headless,
             )
@@ -722,6 +799,8 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_date=args.schedule or 0,
                 group_chat=getattr(args, "group_chat", ""),
                 publish_strategy=publish_strategy,
+                publish_mode=args.publish_mode,
+                confirm_protocol_publish=args.confirm_protocol_publish,
                 debug=args.debug,
                 headless=args.headless,
             )
