@@ -386,8 +386,102 @@ class NotePublishPage:
         raise TimeoutError("page did not navigate")
 
 
+class GotoProbePage:
+    def __init__(self, failures=None):
+        self.failures = list(failures or [])
+        self.goto_calls = []
+        self.screenshots = []
+        self.url = ""
+
+    async def goto(self, url, **kwargs):
+        self.goto_calls.append((url, kwargs))
+        if self.failures:
+            raise RuntimeError(self.failures.pop(0))
+        self.url = url
+
+    async def screenshot(self, **kwargs):
+        self.screenshots.append(kwargs)
+
+
+class CookieAuthProbeContext:
+    def __init__(self, page):
+        self.page = page
+        self.closed = False
+
+    async def new_page(self):
+        return self.page
+
+    async def close(self):
+        self.closed = True
+
+
 async def no_sleep(_delay):
     return None
+
+
+class DouyinNavigationTests(unittest.TestCase):
+    def test_goto_douyin_page_uses_commit_and_retries_transient_network_error(self):
+        page = GotoProbePage(["Page.goto: net::ERR_CONNECTION_CLOSED"])
+
+        with mock.patch("uploader.douyin_uploader.main.asyncio.sleep", new=no_sleep):
+            asyncio.run(
+                douyin_main._goto_douyin_page(
+                    page,
+                    douyin_main.DOUYIN_UPLOAD_URL,
+                    retry_delay_seconds=0,
+                )
+            )
+
+        self.assertEqual(len(page.goto_calls), 2)
+        for url, kwargs in page.goto_calls:
+            self.assertEqual(url, douyin_main.DOUYIN_UPLOAD_URL)
+            self.assertEqual(kwargs["wait_until"], "commit")
+            self.assertEqual(kwargs["timeout"], douyin_main.DOUYIN_PAGE_NAVIGATION_TIMEOUT_MS)
+
+    def test_goto_douyin_page_reports_network_failure_after_retry(self):
+        page = GotoProbePage(
+            [
+                "Page.goto: net::ERR_CONNECTION_CLOSED",
+                "Page.goto: net::ERR_CONNECTION_CLOSED",
+            ]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "可能是网络连接"):
+            with mock.patch("uploader.douyin_uploader.main.asyncio.sleep", new=no_sleep):
+                asyncio.run(
+                    douyin_main._goto_douyin_page(
+                        page,
+                        douyin_main.DOUYIN_UPLOAD_URL,
+                        retry_delay_seconds=0,
+                    )
+                )
+
+        self.assertEqual(len(page.goto_calls), 2)
+
+    def test_cookie_auth_reports_unknown_state_without_marking_cookie_expired(self):
+        page = GotoProbePage()
+        browser = DummyBrowser()
+        context = CookieAuthProbeContext(page)
+
+        async def fake_open_douyin_cloak_context(**_kwargs):
+            return browser, context
+
+        async def fake_wait_for_douyin_auth_state(_page, timeout=15000, poll_interval=0.5):
+            return "unknown"
+
+        with self.assertRaisesRegex(RuntimeError, "无法确认抖音登录状态"):
+            with mock.patch(
+                "uploader.douyin_uploader.main.open_douyin_cloak_context",
+                new=fake_open_douyin_cloak_context,
+            ), mock.patch(
+                "uploader.douyin_uploader.main._wait_for_douyin_auth_state",
+                new=fake_wait_for_douyin_auth_state,
+            ):
+                asyncio.run(douyin_main.cookie_auth("account.json"))
+
+        self.assertTrue(context.closed)
+        self.assertTrue(browser.closed)
+        self.assertTrue(page.screenshots)
 
 
 class DouyinAuthStateTests(unittest.TestCase):

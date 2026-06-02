@@ -35,7 +35,22 @@ DOUYIN_DECLARATION_SELECTION_MODAL_TITLE = "对作品内容添加声明"
 DOUYIN_DECLARATION_SELECTION_OPTION = "无需添加自主声明"
 DOUYIN_DECLARATION_CONFIRM_BUTTON = "确定"
 DOUYIN_MODAL_SELECTOR = ".semi-modal-content"
+DOUYIN_PAGE_NAVIGATION_TIMEOUT_MS = 60000
+DOUYIN_PAGE_NAVIGATION_WAIT_UNTIL = "commit"
+DOUYIN_PAGE_NAVIGATION_RETRIES = 1
+DOUYIN_PAGE_NAVIGATION_RETRY_DELAY_SECONDS = 2
+DOUYIN_TRANSIENT_NAVIGATION_ERROR_MARKERS = (
+    "ERR_CONNECTION_ABORTED",
+    "ERR_CONNECTION_CLOSED",
+    "ERR_CONNECTION_RESET",
+    "ERR_NETWORK_CHANGED",
+    "ERR_TIMED_OUT",
+    "Timeout ",
+    "TimeoutError",
+    "超时",
+)
 DOUYIN_VIDEO_PUBLISH_PAGE_TIMEOUT_SECONDS = 180
+DOUYIN_VIDEO_UPLOAD_INPUT_TIMEOUT_MS = 60000
 DOUYIN_VIDEO_UPLOAD_INPUT_SELECTOR = (
     'input[type="file"][accept*="video"], '
     'input[type="file"][accept*=".mp4"], '
@@ -184,6 +199,57 @@ def _is_douyin_login_url(url: str) -> bool:
     return parsed.netloc.endswith("creator.douyin.com") and "login" in parsed.path.lower()
 
 
+async def _goto_douyin_page(
+    page: Page,
+    url: str,
+    *,
+    timeout: int = DOUYIN_PAGE_NAVIGATION_TIMEOUT_MS,
+    retries: int = DOUYIN_PAGE_NAVIGATION_RETRIES,
+    retry_delay_seconds: float = DOUYIN_PAGE_NAVIGATION_RETRY_DELAY_SECONDS,
+) -> None:
+    """打开抖音创作者页，只等导航提交，后续由页面元素和 URL 轮询判断真实状态。"""
+    attempts = max(1, int(retries) + 1)
+    for attempt in range(1, attempts + 1):
+        try:
+            await page.goto(url, wait_until=DOUYIN_PAGE_NAVIGATION_WAIT_UNTIL, timeout=timeout)
+            return
+        except Exception as exc:
+            message = str(exc)
+            if attempt >= attempts or not _is_douyin_transient_navigation_error(message):
+                raise RuntimeError(_douyin_navigation_error_message(url, message, attempt, attempts)) from exc
+            douyin_logger.warning(
+                _msg(
+                    "😵",
+                    f"打开抖音页面失败，准备重试 {attempt}/{attempts - 1}: {_first_error_line(message)}",
+                )
+            )
+            if retry_delay_seconds > 0:
+                await asyncio.sleep(retry_delay_seconds)
+
+
+def _is_douyin_transient_navigation_error(message: str) -> bool:
+    text = str(message or "")
+    return any(marker in text for marker in DOUYIN_TRANSIENT_NAVIGATION_ERROR_MARKERS)
+
+
+def _first_error_line(message: str) -> str:
+    for line in str(message or "").splitlines():
+        text = line.strip()
+        if text:
+            return text
+    return "unknown"
+
+
+def _douyin_navigation_error_message(url: str, message: str, attempt: int, attempts: int) -> str:
+    first_line = _first_error_line(message)
+    if _is_douyin_transient_navigation_error(message):
+        return (
+            "打开抖音页面失败，可能是网络连接或抖音创作者页响应异常，"
+            f"已尝试 {attempt}/{attempts} 次，目标 URL: {url}，错误: {first_line}"
+        )
+    return f"打开抖音页面失败，目标 URL: {url}，错误: {first_line}"
+
+
 async def _save_failure_screenshot(page: Page, account_file: str | os.PathLike, prefix: str) -> str:
     try:
         account_path = Path(account_file).expanduser()
@@ -203,8 +269,17 @@ async def cookie_auth(account_file):
     browser, context = await open_douyin_cloak_context(headless=True, storage_state=account_file)
     try:
         page = await context.new_page()
-        await page.goto(DOUYIN_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
-        return await _wait_for_douyin_auth_state(page) == "authenticated"
+        await _goto_douyin_page(page, DOUYIN_UPLOAD_URL)
+        state = await _wait_for_douyin_auth_state(page, timeout=DOUYIN_PAGE_NAVIGATION_TIMEOUT_MS)
+        if state == "authenticated":
+            return True
+        if state == "login":
+            return False
+        screenshot = await _save_failure_screenshot(page, account_file, "douyin_cookie_auth_unknown")
+        raise RuntimeError(
+            "无法确认抖音登录状态，可能是网络连接或抖音创作者页响应异常，"
+            f"当前 URL: {getattr(page, 'url', '') or 'unknown'}，现场截图: {screenshot}"
+        )
     finally:
         await context.close()
         await browser.close()
@@ -302,7 +377,7 @@ async def douyin_cookie_gen(
     result = _build_login_result(False, "failed", "抖音登录失败", account_file)
     try:
         page = await context.new_page()
-        await page.goto("https://creator.douyin.com/", wait_until="domcontentloaded", timeout=60000)
+        await _goto_douyin_page(page, "https://creator.douyin.com/")
         qrcode_info = await _save_douyin_qrcode(page, account_file, qrcode_callback=qrcode_callback)
         qrcode_path = Path(qrcode_info["image_path"])
         douyin_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
@@ -486,7 +561,7 @@ class DouYinBaseUploader(BaseVideoUploader):
 
     async def upload_video_file_from_upload_page(self, page: Page, guide_timeout_seconds: float = 2.0) -> None:
         upload_input = page.locator(DOUYIN_VIDEO_UPLOAD_INPUT_SELECTOR).first
-        await upload_input.wait_for(state="attached", timeout=15000)
+        await upload_input.wait_for(state="attached", timeout=DOUYIN_VIDEO_UPLOAD_INPUT_TIMEOUT_MS)
         await self.dismiss_upload_page_guides(page, timeout_seconds=guide_timeout_seconds)
 
         upload_button = page.get_by_text(DOUYIN_VIDEO_UPLOAD_BUTTON_TEXT, exact=True).first
@@ -739,7 +814,7 @@ class DouYinVideo(DouYinBaseUploader):
         browser, context = await self.open_publish_context()
         try:
             page = await context.new_page()
-            await page.goto(DOUYIN_UPLOAD_URL, wait_until="domcontentloaded", timeout=60000)
+            await _goto_douyin_page(page, DOUYIN_UPLOAD_URL)
             douyin_logger.info(_msg("🏃", f"小人开始搬运视频: {self.title}.mp4"))
             douyin_logger.info(_msg("🧭", "小人正在赶往上传主页"))
             await self.upload_video_file_from_upload_page(page)
@@ -923,7 +998,7 @@ class DouYinNote(DouYinBaseUploader):
         upload_success = False
         try:
             page = await context.new_page()
-            await page.goto(DOUYIN_UPLOAD_URL)
+            await _goto_douyin_page(page, DOUYIN_UPLOAD_URL)
             douyin_logger.info(_msg("🧭", "小人正在赶往图文发布页"))
             await page.wait_for_url(DOUYIN_UPLOAD_URL)
 
