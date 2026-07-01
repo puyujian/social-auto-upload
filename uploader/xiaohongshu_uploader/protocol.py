@@ -23,11 +23,14 @@ import requests
 REQUEST_TIMEOUT = 30
 CREATOR_BASE_URL = "https://creator.xiaohongshu.com"
 EDITH_BASE_URL = "https://edith.xiaohongshu.com"
+ARK_BASE_URL = "https://ark.xiaohongshu.com"
 UPLOAD_DEFAULT_HOST = "ros-upload.xiaohongshu.com"
 XHS_GROUP_LIST_API = "/api/im/web/nns/group_list"
+XHS_GOODS_LIST_API = "/api/edith/snsbridge/ark/goods_list_v2"
 CREATOR_XSEC_APPID = "ugc"
 CREATOR_SIGN_VERSION = "4.3.2"
 CREATOR_WEB_BUILD = "4.84.1"
+XHS_MAX_TOPICS = 10
 TRANSCODE_MAX_RETRIES = 20
 TRANSCODE_RETRY_DELAY_SECONDS = 3
 XHS_PRIVACY_PUBLIC = 0
@@ -40,11 +43,7 @@ class XiaohongshuProtocolError(RuntimeError):
 
 
 class XiaohongshuTopicNotFoundError(XiaohongshuProtocolError):
-    """平台话题搜索成功但没有返回可关联话题。"""
-
-    def __init__(self, topic: str):
-        self.topic = str(topic or "").strip()
-        super().__init__(f"未找到小红书话题: {self.topic}")
+    """小红书官方话题搜索没有返回可绑定话题。"""
 
 
 @dataclass(slots=True)
@@ -135,7 +134,7 @@ class CreatorSigner:
         effective_ts_ms = max(0, timestamp_ms - random.randint(10, 50) * 1000)
 
         payload: list[int] = []
-        payload.extend(self.VERSION_BYTES)
+        payload.extend(_byte_sequence("VERSION_BYTES", self.VERSION_BYTES))
         payload.extend(_int_to_le_bytes(seed, 4))
         ts_bytes = _int_to_le_bytes(timestamp_ms, 8)
         payload.extend(ts_bytes)
@@ -155,11 +154,16 @@ class CreatorSigner:
         payload.append(len(app_bytes))
         payload.extend(app_bytes)
 
-        payload.extend([1, seed_byte ^ self.ENV_TABLE[0]])
-        payload.extend([self.ENV_TABLE[index] ^ self.ENV_CHECKS_DEFAULT[index] for index in range(1, 15)])
+        env_table = _byte_sequence("ENV_TABLE", self.ENV_TABLE)
+        env_checks = _byte_sequence("ENV_CHECKS_DEFAULT", self.ENV_CHECKS_DEFAULT)
+        if len(env_table) < 15 or len(env_checks) < 15:
+            raise XiaohongshuProtocolError("小红书签名字节常量长度异常，无法生成 Creator 签名")
+        payload.extend([1, seed_byte ^ env_table[0]])
+        payload.extend([env_table[index] ^ env_checks[index] for index in range(1, 15)])
 
         api_md5_bytes = [int(api_md5[index : index + 2], 16) for index in range(0, 32, 2)]
-        payload.extend(self.A3_PREFIX + [value ^ seed_byte for value in self._custom_hash(ts_bytes + api_md5_bytes)])
+        payload.extend(_byte_sequence("A3_PREFIX", self.A3_PREFIX))
+        payload.extend(value ^ seed_byte for value in self._custom_hash([*ts_bytes, *api_md5_bytes]))
 
         transformed = bytearray(len(payload))
         key = bytes.fromhex(self.HEX_KEY)
@@ -248,6 +252,7 @@ class XhsCreatorProtocol:
         description: str,
         tags: list[str],
         group_chat: str = "",
+        product_keywords: list[str] | None = None,
         confirm_publish: bool = False,
     ) -> dict[str, Any]:
         video_bytes = Path(video_file).read_bytes()
@@ -263,7 +268,13 @@ class XhsCreatorProtocol:
             cover_info=cover_info.as_reference_dict(),
             metadata=metadata,
         )
-        return self._post_note(payload, tags=tags, group_chat=group_chat, confirm_publish=confirm_publish)
+        return self._post_note(
+            payload,
+            tags=tags,
+            group_chat=group_chat,
+            product_keywords=product_keywords or [],
+            confirm_publish=confirm_publish,
+        )
 
     def publish_note(
         self,
@@ -273,13 +284,20 @@ class XhsCreatorProtocol:
         note: str,
         tags: list[str],
         group_chat: str = "",
+        product_keywords: list[str] | None = None,
         confirm_publish: bool = False,
     ) -> dict[str, Any]:
         if not image_files:
             raise XiaohongshuProtocolError("小红书协议图文发布至少需要 1 张图片")
         file_infos = [self.upload_media(Path(path).read_bytes(), "image").as_reference_dict() for path in image_files]
         payload = build_image_note_payload(title=title, description=note, file_infos=file_infos)
-        return self._post_note(payload, tags=tags, group_chat=group_chat, confirm_publish=confirm_publish)
+        return self._post_note(
+            payload,
+            tags=tags,
+            group_chat=group_chat,
+            product_keywords=product_keywords or [],
+            confirm_publish=confirm_publish,
+        )
 
     def request_upload_permit(self, media_type: str) -> dict[str, Any]:
         if media_type not in {"image", "video"}:
@@ -398,7 +416,41 @@ class XhsCreatorProtocol:
     def resolve_group_bind(self, group_chat: str) -> dict[str, Any]:
         return build_group_bind(select_group_for_bind(self.query_group_list(), group_chat), group_chat)
 
+    def query_goods_list(self, keyword: str) -> list[dict[str, Any]]:
+        data = {
+            "goods_option_type": "goods_seller",
+            "keyword": str(keyword or "").strip(),
+            "page_num": 1,
+            "tab_type": 1,
+            "order_column": "first_buyable_time",
+            "order_asc": False,
+            "goods_id_for_memory": [],
+        }
+        headers = ark_json_headers()
+        body = _compact_json(data)
+        response = self.session.post(
+            ARK_BASE_URL + XHS_GOODS_LIST_API,
+            headers=headers,
+            cookies=self.cookies,
+            data=body.encode("utf-8"),
+            timeout=REQUEST_TIMEOUT,
+        )
+        payload = parse_json_response(response, f"查询小红书商品失败: {keyword}")
+        if not payload.get("success"):
+            raise XiaohongshuProtocolError(str(payload.get("msg") or f"查询小红书商品失败: {keyword}"))
+        return extract_goods_list(payload)
+
+    def resolve_goods_bindings(self, product_keywords: list[str]) -> list[dict[str, Any]]:
+        goods: list[dict[str, Any]] = []
+        for keyword in product_keywords:
+            selected = select_goods_for_bind(self.query_goods_list(keyword), keyword)
+            goods.append(selected)
+        return build_goods_relations(goods)
+
     def search_topic(self, topic: str) -> dict[str, str]:
+        topic = str(topic or "").strip().lstrip("#").strip()
+        if not topic:
+            raise XiaohongshuProtocolError("小红书话题为空，无法查询")
         api = "/web_api/sns/v1/search/topic"
         data = {
             "keyword": topic,
@@ -424,7 +476,7 @@ class XhsCreatorProtocol:
             raise XiaohongshuProtocolError(str(payload.get("msg") or f"查询小红书话题失败: {topic}"))
         topics = ((payload.get("data") or {}).get("topic_info_dtos") or [])
         if not topics:
-            raise XiaohongshuTopicNotFoundError(topic)
+            raise XiaohongshuTopicNotFoundError(f"未找到小红书话题: {topic}")
         first = topics[0]
         return {
             "id": first["id"],
@@ -439,20 +491,27 @@ class XhsCreatorProtocol:
         *,
         tags: list[str],
         group_chat: str = "",
+        product_keywords: list[str] | None = None,
         confirm_publish: bool,
     ) -> dict[str, Any]:
-        for tag in tags:
+        topic_names: list[str] = []
+        for tag in normalize_topic_tags(tags)[:XHS_MAX_TOPICS]:
             try:
                 topic = self.search_topic(tag)
             except XiaohongshuTopicNotFoundError:
-                append_plain_text_topic(payload, tag)
-                log_topic_not_found(tag)
+                topic_names.append(tag)
                 continue
             payload["common"]["hash_tag"].append(topic)
-            payload["common"]["desc"] += f" #{topic['name']}[话题]# "
+            inject_topic_trace(payload, topic)
+            topic_names.append(str(topic.get("name") or tag).strip() or tag)
+        append_topic_names_to_desc(payload, topic_names)
 
         if str(group_chat or "").strip():
             inject_group_bind(payload, self.resolve_group_bind(group_chat))
+
+        products = [str(item or "").strip() for item in product_keywords or [] if str(item or "").strip()]
+        if products:
+            inject_goods_relations(payload, self.resolve_goods_bindings(products))
 
         if not confirm_publish:
             raise XiaohongshuProtocolError(
@@ -671,6 +730,14 @@ def extract_group_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [group for group in groups if isinstance(group, dict)]
 
 
+def extract_goods_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    goods = (data or {}).get("data") if isinstance(data, dict) else []
+    if not isinstance(goods, list):
+        raise XiaohongshuProtocolError("小红书商品列表结构异常，无法继续协议发布")
+    return [item for item in goods if isinstance(item, dict)]
+
+
 def select_group_for_bind(groups: list[dict[str, Any]], group_chat: str) -> dict[str, Any]:
     wanted = str(group_chat or "").strip()
     if not wanted:
@@ -699,6 +766,119 @@ def select_group_for_bind(groups: list[dict[str, Any]], group_chat: str) -> dict
     return selected
 
 
+def select_goods_for_bind(goods: list[dict[str, Any]], keyword: str) -> dict[str, Any]:
+    wanted = str(keyword or "").strip()
+    if not wanted:
+        raise XiaohongshuProtocolError("小红书商品关键词为空，无法关联商品")
+    if not goods:
+        raise XiaohongshuProtocolError(f"未找到小红书商品: {wanted}")
+
+    normalized = wanted.lower()
+    matches = [
+        item for item in goods
+        if normalized in _goods_search_text(item).lower()
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        return matches[0]
+
+    first = goods[0]
+    if len(goods) == 1:
+        return first
+    names = "、".join(_goods_name(item) or "(未命名商品)" for item in goods[:8])
+    raise XiaohongshuProtocolError(f"未找到小红书商品: {wanted}，当前可选: {names}")
+
+
+def build_goods_relations(goods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    relations: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for index, item in enumerate(goods):
+        info = item.get("goods_info") if isinstance(item, dict) else {}
+        if not isinstance(info, dict):
+            raise XiaohongshuProtocolError("小红书商品字段缺失，无法关联商品")
+        goods_id = str(info.get("goods_id") or "").strip()
+        goods_name = str(info.get("name") or "").strip()
+        if not goods_id or not goods_name:
+            raise XiaohongshuProtocolError("小红书商品缺少 goods_id/name，无法关联商品")
+        if goods_id in seen_ids:
+            continue
+        seen_ids.add(goods_id)
+        relations.append(
+            {
+                "biz_type": "GOODS_SELLER_V2",
+                "biz_id": goods_id,
+                "extra_info": _compact_json(
+                    {
+                        "goods_id": goods_id,
+                        "goods_name": goods_name,
+                        "goods_type": "goods_seller",
+                        "tab_id": _goods_tab_id(info),
+                        "image_type": "spec",
+                        "left_bottom_type": "BUY_GOODS",
+                        "bind_order": len(relations),
+                    }
+                ),
+            }
+        )
+    return relations
+
+
+def inject_goods_relations(payload: dict[str, Any], relations: list[dict[str, Any]]) -> None:
+    if not relations:
+        return
+    common = payload.setdefault("common", {})
+    common["goods_info"] = {"extension": {"live_preheat": "0"}}
+    existing = common.get("biz_relations") or []
+    if not isinstance(existing, list):
+        raise XiaohongshuProtocolError("小红书 biz_relations 结构异常，无法写入商品绑定")
+    common["biz_relations"] = [*existing, *relations]
+
+
+def inject_topic_trace(payload: dict[str, Any], topic: dict[str, str]) -> None:
+    common = payload.setdefault("common", {})
+    trace = common.setdefault("capa_trace_info", {})
+    raw_context = trace.get("contextJson") or "{}"
+    try:
+        context = json.loads(raw_context) if isinstance(raw_context, str) else dict(raw_context)
+    except Exception as exc:
+        raise XiaohongshuProtocolError("小红书 capa_trace_info 结构异常，无法写入话题来源") from exc
+    recommend_topics = context.setdefault("recommend_topics", {})
+    used = recommend_topics.setdefault("used", [])
+    if not isinstance(used, list):
+        raise XiaohongshuProtocolError("小红书 recommend_topics.used 结构异常，无法写入话题来源")
+    used.append(
+        {
+            "id": topic["id"],
+            "name": topic["name"],
+            "topic_source": "search_offical",
+        }
+    )
+    trace["contextJson"] = _compact_json(context)
+
+
+def append_topics_to_desc(payload: dict[str, Any], topics: list[dict[str, str]]) -> None:
+    append_topic_names_to_desc(payload, [str(topic.get("name") or "").strip() for topic in topics])
+
+
+def append_topic_names_to_desc(payload: dict[str, Any], topic_names: list[str]) -> None:
+    topic_text = " ".join(f"#{name}[话题]#" for name in topic_names if name)
+    if not topic_text:
+        return
+    common = payload.setdefault("common", {})
+    desc = str(common.get("desc") or "").rstrip()
+    common["desc"] = f"{desc}\n\n{topic_text}" if desc else topic_text
+
+
+def normalize_topic_tags(tags: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for tag in tags:
+        cleaned = str(tag or "").strip().lstrip("#").strip()
+        if cleaned:
+            normalized.append(cleaned)
+    return normalized
+
+
 def build_group_bind(group: dict[str, Any], requested_name: str = "") -> dict[str, Any]:
     group_id = str(group.get("groupId") or group.get("group_id") or "").strip()
     group_name = str(group.get("groupName") or group.get("group_name") or "").strip()
@@ -723,31 +903,31 @@ def inject_group_bind(payload: dict[str, Any], group_bind: dict[str, Any]) -> No
     common["business_binds"] = _compact_json(business_binds)
 
 
-def append_plain_text_topic(payload: dict[str, Any], tag: str) -> None:
-    """话题不可关联时，保留用户给定标签文本，避免可选话题阻断发布。"""
-    tag_text = str(tag or "").strip().lstrip("#").strip()
-    if not tag_text:
-        return
-    common = payload.setdefault("common", {})
-    desc = str(common.get("desc") or "")
-    plain_topic = f"#{tag_text}"
-    if plain_topic.casefold() in desc.casefold():
-        return
-    separator = " " if desc and not desc.endswith((" ", "\n")) else ""
-    common["desc"] = f"{desc}{separator}{plain_topic}"
-
-
-def log_topic_not_found(tag: str) -> None:
-    """当前项目有日志模块时记录跳过原因；迁移单文件时保持协议模块可导入。"""
-    try:
-        from utils.log import xiaohongshu_logger
-    except Exception:
-        return
-    xiaohongshu_logger.warning(f"小红书话题未找到，已保留为普通正文标签继续发布: #{tag}")
-
-
 def _group_name(group: dict[str, Any]) -> str:
     return str(group.get("groupName") or group.get("group_name") or "").strip()
+
+
+def _goods_name(item: dict[str, Any]) -> str:
+    info = item.get("goods_info") if isinstance(item, dict) else {}
+    return str((info or {}).get("name") or "").strip()
+
+
+def _goods_search_text(item: dict[str, Any]) -> str:
+    info = item.get("goods_info") if isinstance(item, dict) else {}
+    if not isinstance(info, dict):
+        return ""
+    parts = [
+        info.get("goods_id"),
+        info.get("name"),
+        info.get("variants"),
+        info.get("item_id"),
+    ]
+    return " ".join(str(part or "").strip() for part in parts if str(part or "").strip())
+
+
+def _goods_tab_id(goods_info: dict[str, Any]) -> int:
+    seller_type = str(goods_info.get("goods_seller_type") or "").strip()
+    return 6 if seller_type == "GOODS_SELLER_SAMPLE" else 1
 
 
 def common_payload(note_type: str, title: str, description: str) -> dict[str, Any]:
@@ -872,6 +1052,23 @@ def edith_json_headers() -> dict[str, str]:
     }
 
 
+def ark_json_headers() -> dict[str, str]:
+    return {
+        "accept": "application/json, text/plain, */*",
+        "accept-language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
+        "content-type": "application/json;charset=UTF-8",
+        "origin": "https://creator.xiaohongshu.com",
+        "referer": "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=image",
+        "sec-ch-ua": "\"Not)A;Brand\";v=\"8\", \"Chromium\";v=\"138\", \"Microsoft Edge\";v=\"138\"",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": "\"Windows\"",
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-site",
+        "user-agent": user_agent(),
+    }
+
+
 def upload_media_headers(message: str, signature: str, token: str) -> dict[str, str]:
     return {
         "accept": "*/*",
@@ -946,6 +1143,18 @@ def _int_to_le_bytes(value: int, length: int) -> list[int]:
     for _ in range(length):
         result.append(value & 0xFF)
         value >>= 8
+    return result
+
+
+def _byte_sequence(name: str, values: Any) -> list[int]:
+    if isinstance(values, dict) or isinstance(values, str):
+        raise XiaohongshuProtocolError(f"小红书签名字节常量 {name} 结构异常，无法生成 Creator 签名")
+    try:
+        result = list(values)
+    except TypeError as exc:
+        raise XiaohongshuProtocolError(f"小红书签名字节常量 {name} 结构异常，无法生成 Creator 签名") from exc
+    if any(not isinstance(value, int) or value < 0 or value > 0xFF for value in result):
+        raise XiaohongshuProtocolError(f"小红书签名字节常量 {name} 包含非法字节，无法生成 Creator 签名")
     return result
 
 
