@@ -102,6 +102,72 @@ class XiaohongshuProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(protocol.XiaohongshuProtocolError, "确认"):
             FakeProtocol()._post_note(payload, tags=[], group_chat="", confirm_publish=False)
 
+    def test_post_note_keeps_plain_text_tag_when_topic_not_found(self):
+        class FakeProtocol(protocol.XhsCreatorProtocol):
+            def __init__(self):
+                self.cookies = {"a1": "1" * 52}
+                self.signer = protocol.CreatorSigner(self.cookies)
+                self.posted_payload = None
+
+            def search_topic(self, topic):
+                if topic == "回老家学艺":
+                    raise protocol.XiaohongshuTopicNotFoundError(topic)
+                return {"id": "topic-1", "link": "xhsdiscover://topic/1", "name": topic, "type": "topic"}
+
+            def _signed_post_headers(self, api, data):
+                self.posted_payload = data
+                return {}, json.dumps(data, ensure_ascii=False)
+
+            @property
+            def session(self):
+                class FakeSession:
+                    def post(self, *args, **kwargs):
+                        class Response:
+                            def raise_for_status(self):
+                                return None
+
+                            def json(self):
+                                return {"success": True, "data": {"note_id": "note-1"}}
+
+                        return Response()
+
+                return FakeSession()
+
+        payload = {
+            "common": {
+                "desc": "正文",
+                "hash_tag": [],
+            }
+        }
+        app = FakeProtocol()
+
+        result = app._post_note(payload, tags=["回老家学艺", "中药手串"], group_chat="", confirm_publish=True)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(payload["common"]["hash_tag"], [{"id": "topic-1", "link": "xhsdiscover://topic/1", "name": "中药手串", "type": "topic"}])
+        self.assertIn("#回老家学艺", payload["common"]["desc"])
+        self.assertIn("#中药手串[话题]#", payload["common"]["desc"])
+        self.assertIs(app.posted_payload, payload)
+
+    def test_post_note_keeps_topic_query_failures_fatal(self):
+        class FakeProtocol(protocol.XhsCreatorProtocol):
+            def __init__(self):
+                self.cookies = {"a1": "1" * 52}
+                self.signer = protocol.CreatorSigner(self.cookies)
+
+            def search_topic(self, topic):
+                raise protocol.XiaohongshuProtocolError(f"查询小红书话题失败: {topic}")
+
+        payload = {
+            "common": {
+                "desc": "正文",
+                "hash_tag": [],
+            }
+        }
+
+        with self.assertRaisesRegex(protocol.XiaohongshuProtocolError, "查询小红书话题失败"):
+            FakeProtocol()._post_note(payload, tags=["回老家学艺"], group_chat="", confirm_publish=True)
+
     def test_common_payload_defaults_to_public_visibility(self):
         payload = protocol.common_payload("video", "标题", "正文")
 

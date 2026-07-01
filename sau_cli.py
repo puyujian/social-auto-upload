@@ -35,6 +35,7 @@ from uploader.xiaohongshu_uploader.main import (
     xiaohongshu_setup,
 )
 from uploader.xiaohongshu_uploader.protocol import XhsCreatorProtocol
+from utils.proxy import activate_proxy_from_args
 
 SCHEDULE_FORMAT = "%Y-%m-%d %H:%M"
 XIAOHONGSHU_PUBLISH_MODE_BROWSER = "browser"
@@ -55,6 +56,7 @@ class DouyinVideoUploadRequest:
     publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -68,6 +70,7 @@ class DouyinNoteUploadRequest:
     publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -82,6 +85,7 @@ class KuaishouVideoUploadRequest:
     publish_strategy: str = KUAISHOU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -95,6 +99,7 @@ class KuaishouNoteUploadRequest:
     publish_strategy: str = KUAISHOU_PUBLISH_STRATEGY_IMMEDIATE
     debug: bool = True
     headless: bool = True
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -112,6 +117,7 @@ class XiaohongshuVideoUploadRequest:
     confirm_protocol_publish: bool = False
     debug: bool = True
     headless: bool = False
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -128,6 +134,7 @@ class XiaohongshuNoteUploadRequest:
     confirm_protocol_publish: bool = False
     debug: bool = True
     headless: bool = False
+    proxy: dict[str, str] | None = None
 
 
 @dataclass(slots=True)
@@ -267,6 +274,7 @@ async def upload_video(request: DouyinVideoUploadRequest) -> Path:
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        proxy=request.proxy,
     )
     await app.douyin_upload_video()
     return account_file
@@ -290,6 +298,7 @@ async def upload_note(request: DouyinNoteUploadRequest) -> Path:
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        proxy=request.proxy,
     )
     await app.douyin_upload_note()
     return account_file
@@ -313,6 +322,7 @@ async def upload_kuaishou_video(request: KuaishouVideoUploadRequest) -> Path:
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        proxy=request.proxy,
     )
     await app.main()
     return account_file
@@ -335,6 +345,7 @@ async def upload_kuaishou_note(request: KuaishouNoteUploadRequest) -> Path:
         publish_strategy=request.publish_strategy,
         debug=request.debug,
         headless=request.headless,
+        proxy=request.proxy,
     )
     await app.main()
     return account_file
@@ -377,6 +388,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
         debug=request.debug,
         headless=request.headless,
         cookie_verified=True,
+        proxy=request.proxy,
     )
     await app.main()
     return account_file
@@ -419,6 +431,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
         debug=request.debug,
         headless=request.headless,
         cookie_verified=True,
+        proxy=request.proxy,
     )
     await app.main()
     return account_file
@@ -493,7 +506,14 @@ def add_runtime_flags(parser: argparse.ArgumentParser, *, default_headless: bool
     headless_group = parser.add_mutually_exclusive_group()
     headless_group.add_argument("--headed", dest="headless", action="store_false", help="Run with browser UI")
     headless_group.add_argument("--headless", dest="headless", action="store_true", help="Run in headless mode")
+    add_proxy_flags(parser)
     parser.set_defaults(headless=default_headless)
+
+
+def add_proxy_flags(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--proxy-server", default="", help="Playwright proxy server, such as http://127.0.0.1:7890")
+    parser.add_argument("--proxy-username", default="", help="Optional proxy username")
+    parser.add_argument("--proxy-password", default="", help="Optional proxy password")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -512,6 +532,8 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser.add_argument("--account", required=True, help="Douyin user-defined account_name")
         if action_name == "login":
             add_runtime_flags(action_parser)
+        else:
+            add_proxy_flags(action_parser)
 
     upload_video_parser = douyin_actions.add_parser("upload-video", help="Upload one video to Douyin")
     upload_video_parser.add_argument("--account", required=True, help="Douyin user-defined account_name")
@@ -542,6 +564,8 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser.add_argument("--account", required=True, help="Kuaishou user-defined account_name")
         if action_name == "login":
             add_runtime_flags(action_parser)
+        else:
+            add_proxy_flags(action_parser)
 
     kuaishou_upload_video_parser = kuaishou_actions.add_parser("upload-video", help="Upload one video to Kuaishou")
     kuaishou_upload_video_parser.add_argument("--account", required=True, help="Kuaishou user-defined account_name")
@@ -570,6 +594,8 @@ def build_parser() -> argparse.ArgumentParser:
         action_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
         if action_name == "login":
             add_runtime_flags(action_parser, default_headless=False)
+        else:
+            add_proxy_flags(action_parser)
 
     xiaohongshu_upload_video_parser = xiaohongshu_actions.add_parser("upload-video", help="Upload one video to Xiaohongshu")
     xiaohongshu_upload_video_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
@@ -620,6 +646,7 @@ def build_parser() -> argparse.ArgumentParser:
     for action_name in ("login", "check"):
         action_parser = bilibili_actions.add_parser(action_name, help=f"Bilibili {action_name}")
         action_parser.add_argument("--account", required=True, help="Bilibili user-defined account_name")
+        add_proxy_flags(action_parser)
 
     bilibili_upload_video_parser = bilibili_actions.add_parser("upload-video", help="Upload one video to Bilibili")
     bilibili_upload_video_parser.add_argument("--account", required=True, help="Bilibili user-defined account_name")
@@ -646,10 +673,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional biliup submit interface.",
     )
+    add_proxy_flags(bilibili_upload_video_parser)
     return parser
 
 
 async def dispatch(args: argparse.Namespace) -> int:
+    proxy = activate_proxy_from_args(args)
     if args.platform == "douyin":
         if args.action == "login":
             result = await login_douyin_account(args.account, headless=args.headless)
@@ -679,6 +708,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_video(request)
             print(f"Douyin video upload submitted: {request.video_file}")
@@ -695,6 +725,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_note(request)
             print(f"Douyin note upload submitted: {len(request.image_files)} images")
@@ -729,6 +760,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_kuaishou_video(request)
             print(f"Kuaishou video upload submitted: {request.video_file}")
@@ -745,6 +777,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_kuaishou_note(request)
             print(f"Kuaishou note upload submitted: {len(request.image_files)} images")
@@ -757,7 +790,7 @@ async def dispatch(args: argparse.Namespace) -> int:
             result = await login_xiaohongshu_account(args.account, headless=args.headless)
             if not result["success"]:
                 raise RuntimeError(result["message"])
-            print(f"Xiaohongshu login flow completed: {result['account_file']}")
+            print(f"Xiaohongshu home login flow completed: {result['account_file']}")
             return 0
 
         if args.action == "check":
@@ -784,6 +817,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 confirm_protocol_publish=args.confirm_protocol_publish,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_xiaohongshu_video(request)
             print(f"Xiaohongshu video upload submitted: {request.video_file}")
@@ -803,6 +837,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 confirm_protocol_publish=args.confirm_protocol_publish,
                 debug=args.debug,
                 headless=args.headless,
+                proxy=proxy,
             )
             await upload_xiaohongshu_note(request)
             print(f"Xiaohongshu note upload submitted: {len(request.image_files)} images")

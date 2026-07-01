@@ -181,6 +181,25 @@ class NavigationPage:
         self.waits.append((url, kwargs))
 
 
+class LoginPage:
+    def __init__(self, url):
+        self.url = url
+        self.qrcode = FakeLocator("home-qrcode", count=1, src="https://ci.xiaohongshu.com/qrcode.png")
+        self.home_user = FakeLocator("home-user", count=1)
+        self.login_container = FakeLocator("login-container", count=1)
+        self.locators = {
+            xhs_main.XHS_HOME_QRCODE_SELECTOR: self.qrcode,
+            xhs_main.XHS_HOME_LOGIN_SUCCESS_SELECTOR: self.home_user,
+            xhs_main.XHS_HOME_LOGIN_CONTAINER_SELECTOR: self.login_container,
+        }
+
+    def locator(self, selector):
+        return self.locators.get(selector, FakeLocator(selector))
+
+    async def wait_for_timeout(self, timeout):
+        return None
+
+
 class PublishButtonPage:
     def __init__(self):
         self.keyboard = RecordingKeyboard()
@@ -269,6 +288,28 @@ class XiaohongshuUploaderTests(unittest.TestCase):
 
         locator = asyncio.run(xhs_main._find_xhs_qrcode_locator(page))
         self.assertIs(locator, qrcode_locator)
+
+    def test_find_xhs_qrcode_locator_uses_home_qrcode_on_home_login(self):
+        page = LoginPage(xhs_main.XHS_HOME_LOGIN_URL)
+
+        locator = asyncio.run(xhs_main._find_xhs_qrcode_locator(page))
+
+        self.assertIs(locator, page.qrcode)
+
+    def test_home_login_completion_requires_home_user_marker(self):
+        page = LoginPage(xhs_main.XHS_HOME_LOGIN_URL)
+
+        completed = asyncio.run(xhs_main._is_xhs_login_completed(page))
+
+        self.assertTrue(completed)
+
+    def test_home_login_completion_rejects_missing_home_user_marker(self):
+        page = LoginPage(xhs_main.XHS_HOME_LOGIN_URL)
+        page.locators[xhs_main.XHS_HOME_LOGIN_SUCCESS_SELECTOR] = FakeLocator("missing-home-user", count=0)
+
+        completed = asyncio.run(xhs_main._is_xhs_login_completed(page))
+
+        self.assertFalse(completed)
 
     def test_setup_returns_detail_when_cookie_invalid_without_handle(self):
         with patch("uploader.xiaohongshu_uploader.main.os.path.exists", return_value=False):
@@ -598,6 +639,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             tags=[],
             publish_date=0,
             account_file="account.json",
+            proxy={"server": "http://127.0.0.1:7890"},
         )
 
         options = app.build_browser_context_options()
@@ -607,6 +649,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertEqual(options["locale"], "zh-CN")
         self.assertEqual(options["timezone_id"], "Asia/Shanghai")
         self.assertEqual(options["permissions"], ["geolocation"])
+        self.assertEqual(options["proxy"], {"server": "http://127.0.0.1:7890"})
 
     def test_validate_base_args_skips_cookie_probe_when_cookie_verified(self):
         app = xhs_main.XiaoHongShuVideo(
@@ -631,6 +674,15 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         self.assertEqual(options["viewport"], {"width": 1536, "height": 864})
         self.assertEqual(options["locale"], "zh-CN")
         self.assertEqual(options["timezone_id"], "Asia/Shanghai")
+
+    def test_build_xhs_context_options_merges_proxy(self):
+        options = xhs_main.build_xhs_context_options(
+            "account.json",
+            proxy={"server": "socks5h://proxy.local:1080"},
+        )
+
+        self.assertEqual(options["storage_state"], "account.json")
+        self.assertEqual(options["proxy"], {"server": "socks5://proxy.local:1080"})
 
     def test_open_xhs_cloak_context_maps_stable_options_to_cloakbrowser(self):
         captured = {}
@@ -666,6 +718,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
             tags=[],
             publish_date=0,
             account_file="account.json",
+            proxy={"server": "http://127.0.0.1:7890"},
         )
         browser = DummyBrowser()
         context = DummyContext()
@@ -673,6 +726,7 @@ class XiaohongshuUploaderTests(unittest.TestCase):
         async def fake_open_xhs_cloak_context(**kwargs):
             self.assertEqual(kwargs["headless"], False)
             self.assertEqual(kwargs["context_options"]["storage_state"], "account.json")
+            self.assertEqual(kwargs["context_options"]["proxy"], {"server": "http://127.0.0.1:7890"})
             return browser, context
 
         with patch(

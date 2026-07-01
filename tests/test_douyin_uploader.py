@@ -158,6 +158,15 @@ class DouyinCloakContextTests(unittest.TestCase):
         self.assertNotIn("storage_state", options)
         self.assertEqual(options["permissions"], ["geolocation"])
 
+    def test_build_douyin_context_options_merges_proxy(self):
+        options = douyin_main.build_douyin_context_options(
+            "account.json",
+            proxy={"server": "socks5h://proxy.local:1080"},
+        )
+
+        self.assertEqual(options["storage_state"], "account.json")
+        self.assertEqual(options["proxy"], {"server": "socks5://proxy.local:1080"})
+
     def test_open_douyin_cloak_context_maps_options_to_cloakbrowser(self):
         captured = {}
         context = DummyContext()
@@ -190,6 +199,7 @@ class DouyinCloakContextTests(unittest.TestCase):
             publish_date=0,
             account_file="account.json",
             headless=False,
+            proxy={"server": "http://127.0.0.1:7890"},
         )
         browser = DummyBrowser()
         context = DummyContext()
@@ -198,6 +208,7 @@ class DouyinCloakContextTests(unittest.TestCase):
             self.assertEqual(kwargs["headless"], False)
             self.assertEqual(kwargs["context_options"]["storage_state"], "account.json")
             self.assertEqual(kwargs["context_options"]["permissions"], ["geolocation"])
+            self.assertEqual(kwargs["context_options"]["proxy"], {"server": "http://127.0.0.1:7890"})
             return browser, context
 
         with mock.patch(

@@ -31,11 +31,68 @@ class GotoTimeoutContext(DummyContext):
         return GotoTimeoutPage()
 
 
+class TextBodyLocator:
+    def __init__(self, text):
+        self.text = text
+
+    async def inner_text(self, **_kwargs):
+        return self.text
+
+
+class BrokenDescriptionLocator:
+    def locator(self, _selector):
+        return self
+
+    async def click(self):
+        raise RuntimeError("locator timeout")
+
+
+class ReadyDescriptionLocator:
+    def __init__(self):
+        self.clicked = False
+
+    def locator(self, _selector):
+        return self
+
+    async def click(self):
+        self.clicked = True
+
+
+class PublishStatePage:
+    def __init__(self, text="", *, description_locator=None):
+        self.url = "https://cp.kuaishou.com/article/publish/video"
+        self.text = text
+        self.description_locator = description_locator or ReadyDescriptionLocator()
+        self.screenshots = []
+
+    def locator(self, selector):
+        if selector == "body":
+            return TextBodyLocator(self.text)
+        raise AssertionError(f"unexpected locator: {selector}")
+
+    def get_by_text(self, text, **_kwargs):
+        if text == "描述":
+            return self.description_locator
+        raise AssertionError(f"unexpected text: {text}")
+
+    async def screenshot(self, **kwargs):
+        self.screenshots.append(kwargs)
+
+
 class KuaishouCloakContextTests(unittest.TestCase):
     def test_build_kuaishou_context_options_can_omit_storage_state_for_login(self):
         options = ks_main.build_kuaishou_context_options()
 
         self.assertNotIn("storage_state", options)
+
+    def test_build_kuaishou_context_options_merges_proxy(self):
+        options = ks_main.build_kuaishou_context_options(
+            "account.json",
+            proxy={"server": "socks5h://proxy.local:1080"},
+        )
+
+        self.assertEqual(options["storage_state"], "account.json")
+        self.assertEqual(options["proxy"], {"server": "socks5://proxy.local:1080"})
 
     def test_open_kuaishou_cloak_context_maps_options_to_cloakbrowser(self):
         captured = {}
@@ -68,6 +125,7 @@ class KuaishouCloakContextTests(unittest.TestCase):
             publish_date=0,
             account_file="account.json",
             headless=False,
+            proxy={"server": "http://127.0.0.1:7890"},
         )
         browser = DummyBrowser()
         context = DummyContext()
@@ -75,6 +133,7 @@ class KuaishouCloakContextTests(unittest.TestCase):
         async def fake_open_kuaishou_cloak_context(**kwargs):
             self.assertEqual(kwargs["headless"], False)
             self.assertEqual(kwargs["context_options"]["storage_state"], "account.json")
+            self.assertEqual(kwargs["context_options"]["proxy"], {"server": "http://127.0.0.1:7890"})
             return browser, context
 
         with patch(
@@ -110,6 +169,49 @@ class KuaishouCloakContextTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["status"], "cookie_check_failed")
         self.assertEqual(result["message"], "探测失败")
+
+    def test_classifies_publish_page_account_restricted_text(self):
+        result = ks_main._classify_kuaishou_publish_page_state(
+            url="https://cp.kuaishou.com/article/publish/video",
+            visible_text="当前账号暂无发布权限，请处理违规处罚后再试",
+        )
+
+        self.assertEqual(result["error_code"], "kuaishou_publish_page_account_restricted")
+        self.assertIn("发布权限受限", result["title"])
+
+    def test_click_description_editor_raises_diagnostic_on_restricted_page(self):
+        page = PublishStatePage("当前账号被处罚，暂无发布权限")
+        app = ks_main.KSVideo(
+            title="标题",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="D:/social-auto-upload/cookies/kuaishou_team.json",
+        )
+
+        with self.assertRaises(ks_main.KuaishouPublishPageStateError) as ctx:
+            asyncio.run(app.click_description_editor(page))
+
+        self.assertEqual(ctx.exception.error_code, "kuaishou_publish_page_account_restricted")
+        self.assertTrue(page.screenshots)
+        self.assertIn("现场截图", str(ctx.exception))
+
+    def test_click_description_editor_reports_dom_change_when_locator_fails(self):
+        page = PublishStatePage("发布视频 上传中 描述", description_locator=BrokenDescriptionLocator())
+        app = ks_main.KSVideo(
+            title="标题",
+            file_path="video.mp4",
+            tags=[],
+            publish_date=0,
+            account_file="D:/social-auto-upload/cookies/kuaishou_team.json",
+        )
+
+        with self.assertRaises(ks_main.KuaishouPublishPageStateError) as ctx:
+            asyncio.run(app.click_description_editor(page))
+
+        self.assertEqual(ctx.exception.error_code, "kuaishou_publish_page_dom_changed")
+        self.assertIn("locator timeout", str(ctx.exception))
+        self.assertTrue(page.screenshots)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,8 @@ from utils.login_qrcode import print_terminal_qrcode
 from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.log import douyin_logger
+from utils.proxy import merge_proxy_context_options
+from utils.proxy import normalize_playwright_proxy
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -72,11 +74,15 @@ def _msg(emoji: str, text: str) -> str:
     return f"{emoji} {text}"
 
 
-def build_douyin_context_options(storage_state: str | os.PathLike | None = None) -> dict:
+def build_douyin_context_options(
+    storage_state: str | os.PathLike | None = None,
+    *,
+    proxy: dict[str, Any] | None = None,
+) -> dict:
     options = dict(DOUYIN_STABLE_CONTEXT_OPTIONS)
     if storage_state:
         options["storage_state"] = str(storage_state)
-    return options
+    return merge_proxy_context_options(options, proxy=proxy)
 
 
 class _ClosedCloakBrowser:
@@ -421,6 +427,7 @@ class DouYinBaseUploader(BaseVideoUploader):
         publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        proxy: dict[str, Any] | None = None,
     ):
         self.publish_date = publish_date
         self.account_file = account_file
@@ -429,6 +436,7 @@ class DouYinBaseUploader(BaseVideoUploader):
         self.date_format = "%Y年%m月%d日 %H:%M"
         self.local_executable_path = LOCAL_CHROME_PATH
         self.headless = headless
+        self.proxy = normalize_playwright_proxy(proxy)
 
     async def validate_base_args(self):
         if not os.path.exists(self.account_file):
@@ -718,6 +726,7 @@ class DouYinVideo(DouYinBaseUploader):
         publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -725,6 +734,7 @@ class DouYinVideo(DouYinBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            proxy=proxy,
         )
         self.title = title
         self.file_path = file_path
@@ -803,7 +813,7 @@ class DouYinVideo(DouYinBaseUploader):
     async def open_publish_context(self):
         return await open_douyin_cloak_context(
             headless=self.headless,
-            context_options=build_douyin_context_options(self.account_file),
+            context_options=build_douyin_context_options(self.account_file, proxy=self.proxy),
         )
 
     async def upload(self, _playwright=None) -> None:
@@ -905,6 +915,7 @@ class DouYinNote(DouYinBaseUploader):
         publish_strategy: str = DOUYIN_PUBLISH_STRATEGY_IMMEDIATE,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -912,6 +923,7 @@ class DouYinNote(DouYinBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            proxy=proxy,
         )
         self.image_paths = image_paths
         self.note = note or ""
@@ -985,7 +997,7 @@ class DouYinNote(DouYinBaseUploader):
     async def open_publish_context(self):
         return await open_douyin_cloak_context(
             headless=self.headless,
-            context_options=build_douyin_context_options(self.account_file),
+            context_options=build_douyin_context_options(self.account_file, proxy=self.proxy),
         )
 
     async def upload(self, _playwright=None) -> None:

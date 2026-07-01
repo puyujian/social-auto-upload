@@ -137,6 +137,35 @@ class BrowserCliParserTests(unittest.TestCase):
 
         self.assertTrue(args.headless)
 
+    def test_douyin_upload_video_accepts_proxy_flags(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            video_path = Path(tmp_dir) / "demo.mp4"
+            video_path.write_bytes(b"video")
+
+            parser = sau_cli.build_parser()
+            args = parser.parse_args(
+                [
+                    "douyin",
+                    "upload-video",
+                    "--account",
+                    "creator",
+                    "--file",
+                    str(video_path),
+                    "--title",
+                    "标题",
+                    "--proxy-server",
+                    "socks5h://proxy.local:1080",
+                    "--proxy-username",
+                    "name",
+                    "--proxy-password",
+                    "secret",
+                ]
+            )
+
+        self.assertEqual(args.proxy_server, "socks5h://proxy.local:1080")
+        self.assertEqual(args.proxy_username, "name")
+        self.assertEqual(args.proxy_password, "secret")
+
 
 class BrowserCliDispatchTests(unittest.TestCase):
     def test_dispatch_xiaohongshu_check_prints_valid(self):
@@ -144,6 +173,20 @@ class BrowserCliDispatchTests(unittest.TestCase):
         with patch("sau_cli.check_xiaohongshu_account", new=AsyncMock(return_value=True)):
             code = asyncio.run(sau_cli.dispatch(args))
         self.assertEqual(code, 0)
+
+    def test_dispatch_xiaohongshu_login_reports_home_login(self):
+        args = Namespace(platform="xiaohongshu", action="login", account="creator", headless=False)
+        login_result = {
+            "success": True,
+            "message": "ok",
+            "account_file": "cookies/xiaohongshu_creator.json",
+        }
+        with patch("sau_cli.login_xiaohongshu_account", new=AsyncMock(return_value=login_result)):
+            with patch("builtins.print") as mock_print:
+                code = asyncio.run(sau_cli.dispatch(args))
+
+        self.assertEqual(code, 0)
+        mock_print.assert_called_with("Xiaohongshu home login flow completed: cookies/xiaohongshu_creator.json")
 
     def test_dispatch_douyin_upload_note_uses_new_request_fields(self):
         args = Namespace(
@@ -164,6 +207,39 @@ class BrowserCliDispatchTests(unittest.TestCase):
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.title, "图文标题")
         self.assertEqual(request.note, "图文正文")
+
+    def test_dispatch_douyin_upload_video_passes_cli_proxy_to_request(self):
+        args = Namespace(
+            platform="douyin",
+            action="upload-video",
+            account="creator",
+            file=Path("demo.mp4"),
+            title="视频标题",
+            desc="视频简介",
+            tags="测试,视频",
+            schedule=0,
+            thumbnail=None,
+            product_link="",
+            product_title="",
+            debug=False,
+            headless=True,
+            proxy_server="socks5h://proxy.local:1080",
+            proxy_username="name",
+            proxy_password="secret",
+        )
+        with patch.dict("os.environ", {}, clear=True):
+            with patch("sau_cli.upload_video", new=AsyncMock()) as mock_upload:
+                asyncio.run(sau_cli.dispatch(args))
+
+        request = mock_upload.await_args.args[0]
+        self.assertEqual(
+            request.proxy,
+            {
+                "server": "socks5://proxy.local:1080",
+                "username": "name",
+                "password": "secret",
+            },
+        )
 
     def test_dispatch_xiaohongshu_upload_video_uses_headed_request(self):
         args = Namespace(

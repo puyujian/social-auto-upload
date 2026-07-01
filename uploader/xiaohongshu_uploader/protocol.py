@@ -39,6 +39,14 @@ class XiaohongshuProtocolError(RuntimeError):
     """小红书协议链路的可读错误。"""
 
 
+class XiaohongshuTopicNotFoundError(XiaohongshuProtocolError):
+    """平台话题搜索成功但没有返回可关联话题。"""
+
+    def __init__(self, topic: str):
+        self.topic = str(topic or "").strip()
+        super().__init__(f"未找到小红书话题: {self.topic}")
+
+
 @dataclass(slots=True)
 class MediaInfo:
     file_id: str
@@ -416,7 +424,7 @@ class XhsCreatorProtocol:
             raise XiaohongshuProtocolError(str(payload.get("msg") or f"查询小红书话题失败: {topic}"))
         topics = ((payload.get("data") or {}).get("topic_info_dtos") or [])
         if not topics:
-            raise XiaohongshuProtocolError(f"未找到小红书话题: {topic}")
+            raise XiaohongshuTopicNotFoundError(topic)
         first = topics[0]
         return {
             "id": first["id"],
@@ -434,7 +442,12 @@ class XhsCreatorProtocol:
         confirm_publish: bool,
     ) -> dict[str, Any]:
         for tag in tags:
-            topic = self.search_topic(tag)
+            try:
+                topic = self.search_topic(tag)
+            except XiaohongshuTopicNotFoundError:
+                append_plain_text_topic(payload, tag)
+                log_topic_not_found(tag)
+                continue
             payload["common"]["hash_tag"].append(topic)
             payload["common"]["desc"] += f" #{topic['name']}[话题]# "
 
@@ -708,6 +721,29 @@ def inject_group_bind(payload: dict[str, Any], group_bind: dict[str, Any]) -> No
         raise XiaohongshuProtocolError("小红书 business_binds 结构异常，无法写入群聊绑定") from exc
     business_binds["groupBind"] = group_bind
     common["business_binds"] = _compact_json(business_binds)
+
+
+def append_plain_text_topic(payload: dict[str, Any], tag: str) -> None:
+    """话题不可关联时，保留用户给定标签文本，避免可选话题阻断发布。"""
+    tag_text = str(tag or "").strip().lstrip("#").strip()
+    if not tag_text:
+        return
+    common = payload.setdefault("common", {})
+    desc = str(common.get("desc") or "")
+    plain_topic = f"#{tag_text}"
+    if plain_topic.casefold() in desc.casefold():
+        return
+    separator = " " if desc and not desc.endswith((" ", "\n")) else ""
+    common["desc"] = f"{desc}{separator}{plain_topic}"
+
+
+def log_topic_not_found(tag: str) -> None:
+    """当前项目有日志模块时记录跳过原因；迁移单文件时保持协议模块可导入。"""
+    try:
+        from utils.log import xiaohongshu_logger
+    except Exception:
+        return
+    xiaohongshu_logger.warning(f"小红书话题未找到，已保留为普通正文标签继续发布: #{tag}")
 
 
 def _group_name(group: dict[str, Any]) -> str:

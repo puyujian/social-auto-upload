@@ -20,17 +20,23 @@ from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.human_behavior import HumanBehaviorModule
 from utils.log import xiaohongshu_logger
+from utils.proxy import merge_proxy_context_options
+from utils.proxy import normalize_playwright_proxy
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
 else:
     Page = Any
 
+XHS_HOME_LOGIN_URL = "https://www.xiaohongshu.com/explore"
 XHS_LOGIN_URL = "https://creator.xiaohongshu.com/login"
 XHS_PUBLISH_VIDEO_URL = "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=video"
 XHS_PUBLISH_NOTE_URL = "https://creator.xiaohongshu.com/publish/publish?from=homepage&target=image"
 XHS_PUBLISH_SUCCESS_URL_PATTERN = "**/publish/success?**"
 XHS_LOGIN_BOX_SELECTOR = "div[class*='login-box']"
+XHS_HOME_LOGIN_CONTAINER_SELECTOR = ".login-container"
+XHS_HOME_LOGIN_SUCCESS_SELECTOR = ".main-container .user .link-wrapper .channel"
+XHS_HOME_QRCODE_SELECTOR = ".login-container .qrcode-img"
 XHS_LOGIN_SWITCH_SELECTOR = "img.css-wemwzq"
 XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE = "immediate"
 XIAOHONGSHU_PUBLISH_STRATEGY_SCHEDULED = "scheduled"
@@ -53,11 +59,15 @@ XHS_PUBLISH_RESULT_TIMEOUT = 90 * 1000
 XHS_CUSTOM_PUBLISH_SUBMIT_X_RATIO = 0.61
 
 
-def build_xhs_context_options(storage_state: str | os.PathLike | None = None) -> dict:
+def build_xhs_context_options(
+    storage_state: str | os.PathLike | None = None,
+    *,
+    proxy: dict[str, Any] | None = None,
+) -> dict:
     options = dict(XHS_STABLE_CONTEXT_OPTIONS)
     if storage_state:
         options["storage_state"] = str(storage_state)
-    return options
+    return merge_proxy_context_options(options, proxy=proxy)
 
 
 class _ClosedCloakBrowser:
@@ -164,6 +174,11 @@ def _build_login_result(
 
 
 async def _open_xhs_qrcode_panel(page: Page) -> None:
+    if str(getattr(page, "url", "") or "").startswith(XHS_HOME_LOGIN_URL):
+        qrcode_img = page.locator(XHS_HOME_QRCODE_SELECTOR).first
+        await qrcode_img.wait_for(state="visible", timeout=30000)
+        return
+
     login_box = page.locator(XHS_LOGIN_BOX_SELECTOR).first
     await login_box.wait_for(state="visible", timeout=30000)
 
@@ -179,6 +194,11 @@ async def _open_xhs_qrcode_panel(page: Page) -> None:
 
 async def _find_xhs_qrcode_locator(page: Page):
     await _open_xhs_qrcode_panel(page)
+
+    if str(getattr(page, "url", "") or "").startswith(XHS_HOME_LOGIN_URL):
+        qrcode_img = page.locator(XHS_HOME_QRCODE_SELECTOR).first
+        if await qrcode_img.count():
+            return qrcode_img
 
     qrcode_img = page.locator('.login-box-container').get_by_text("APP扫一扫登录").filter(visible=True).locator("xpath=..//following-sibling::div//img").nth(0)
 
@@ -233,7 +253,17 @@ async def _save_xhs_qrcode(
 
 
 async def _is_xhs_login_completed(page: Page) -> bool:
-    if page.url.startswith(XHS_LOGIN_URL):
+    current_url = str(getattr(page, "url", "") or "")
+    if current_url.startswith(XHS_HOME_LOGIN_URL):
+        home_user = page.locator(XHS_HOME_LOGIN_SUCCESS_SELECTOR).first
+        if await home_user.count():
+            try:
+                return await home_user.is_visible()
+            except Exception:
+                return True
+        return False
+
+    if current_url.startswith(XHS_LOGIN_URL):
         return False
 
     login_box = page.locator(XHS_LOGIN_BOX_SELECTOR).first
@@ -253,10 +283,20 @@ async def cookie_auth(account_file, *, headless: bool = False):
     browser, context = await open_xhs_cloak_context(headless=headless, storage_state=account_file)
     try:
         page = await context.new_page()
-        await page.goto(XHS_PUBLISH_VIDEO_URL)
+        await page.goto(XHS_HOME_LOGIN_URL, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
-        if page.url.startswith(XHS_LOGIN_URL):
+        home_user = page.locator(XHS_HOME_LOGIN_SUCCESS_SELECTOR).first
+        if await home_user.count():
+            try:
+                if await home_user.is_visible():
+                    xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
+                    return True
+            except Exception:
+                xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
+                return True
+
+        if page.url.startswith(XHS_LOGIN_URL) or page.url.startswith(XHS_HOME_LOGIN_URL):
             xiaohongshu_logger.info(_msg("🥹", "cookie 已失效，得重新登录一下"))
             return False
 
@@ -269,8 +309,17 @@ async def cookie_auth(account_file, *, headless: bool = False):
             except Exception:
                 return False
 
-        xiaohongshu_logger.success(_msg("🥳", "cookie 有效"))
-        return True
+        login_container = page.locator(XHS_HOME_LOGIN_CONTAINER_SELECTOR).first
+        if await login_container.count():
+            try:
+                if await login_container.is_visible():
+                    xiaohongshu_logger.info(_msg("🥹", "页面仍然停留在官网登录框，按 cookie 失效处理"))
+                    return False
+            except Exception:
+                return False
+
+        xiaohongshu_logger.info(_msg("🥹", "未看到小红书首页登录态，按 cookie 失效处理"))
+        return False
     except Exception as exc:
         xiaohongshu_logger.warning(_msg("😵", f"cookie 校验时出错，按失效处理: {exc}"))
         return False
@@ -323,7 +372,7 @@ async def xiaohongshu_cookie_gen(
     result = _build_login_result(False, "failed", "小红书登录失败", account_file)
     try:
         page = await context.new_page()
-        await page.goto(XHS_LOGIN_URL)
+        await page.goto(XHS_HOME_LOGIN_URL, wait_until="domcontentloaded")
         qrcode_info = await _save_xhs_qrcode(page, account_file, qrcode_callback=qrcode_callback)
         qrcode_path = Path(qrcode_info["image_path"])
         xiaohongshu_logger.info(_msg("🧍", "请扫码，小人正在耐心等待登录完成"))
@@ -379,6 +428,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         debug: bool = DEBUG_MODE,
         headless: bool = False,
         cookie_verified: bool = False,
+        proxy: dict[str, Any] | None = None,
     ):
         self.publish_date = publish_date
         self.account_file = str(account_file)
@@ -387,6 +437,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         self.date_format = "%Y年%m月%d日 %H:%M"
         self.headless = headless
         self.cookie_verified = cookie_verified
+        self.proxy = normalize_playwright_proxy(proxy)
         self.human = HumanBehaviorModule()
 
     async def apply_human_behavior(self, page: Page, context) -> None:
@@ -395,7 +446,7 @@ class XiaoHongShuBaseUploader(BaseVideoUploader):
         return None
 
     def build_browser_context_options(self) -> dict:
-        return build_xhs_context_options(self.account_file)
+        return build_xhs_context_options(self.account_file, proxy=self.proxy)
 
     async def open_publish_context(self):
         return await open_xhs_cloak_context(
@@ -814,6 +865,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
         headless: bool = False,
         group_chat: str = "",
         cookie_verified: bool = False,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -822,6 +874,7 @@ class XiaoHongShuVideo(XiaoHongShuBaseUploader):
             debug=debug,
             headless=headless,
             cookie_verified=cookie_verified,
+            proxy=proxy,
         )
         self.title = title
         self.file_path = file_path
@@ -966,6 +1019,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
         headless: bool = False,
         group_chat: str = "",
         cookie_verified: bool = False,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -974,6 +1028,7 @@ class XiaoHongShuNote(XiaoHongShuBaseUploader):
             debug=debug,
             headless=headless,
             cookie_verified=cookie_verified,
+            proxy=proxy,
         )
         self.image_paths = image_paths
         self.note = note or ""

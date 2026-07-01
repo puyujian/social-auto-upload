@@ -19,6 +19,8 @@ from utils.login_qrcode import print_terminal_qrcode
 from utils.login_qrcode import remove_qrcode_file
 from utils.login_qrcode import save_data_url_image
 from utils.log import kuaishou_logger
+from utils.proxy import merge_proxy_context_options
+from utils.proxy import normalize_playwright_proxy
 
 if TYPE_CHECKING:
     from playwright.async_api import Page
@@ -42,15 +44,169 @@ class KuaishouCookieCheckError(RuntimeError):
     """快手登录态检测过程失败，不能直接等同于 cookie 失效。"""
 
 
+class KuaishouPublishPageStateError(RuntimeError):
+    """快手发布页状态不可继续发布，携带稳定错误码和现场诊断。"""
+
+    def __init__(self, error_code: str, message: str, diagnostics: dict[str, Any]):
+        super().__init__(message)
+        self.error_code = error_code
+        self.diagnostics = diagnostics
+
+
 def _msg(emoji: str, text: str) -> str:
     return f"{emoji} {text}"
 
 
-def build_kuaishou_context_options(storage_state: str | os.PathLike | None = None) -> dict:
+def _first_matched_marker(text: str, markers: tuple[str, ...]) -> str:
+    for marker in markers:
+        if marker and marker.casefold() in text:
+            return marker
+    return ""
+
+
+def _compact_page_text(text: str, limit: int = 1000) -> str:
+    compact = " ".join(str(text or "").split())
+    if len(compact) <= limit:
+        return compact
+    return compact[:limit] + "..."
+
+
+def _classify_kuaishou_publish_page_state(
+    *,
+    url: str,
+    visible_text: str,
+    error: str = "",
+    default_error_code: str = "kuaishou_publish_page_ready",
+) -> dict[str, str]:
+    url_text = str(url or "").strip()
+    text = f"{url_text}\n{visible_text or ''}\n{error or ''}".casefold()
+    if "passport.kuaishou.com" in text or "login" in url_text.casefold():
+        return {
+            "error_code": "kuaishou_publish_page_login_invalid",
+            "title": "快手登录状态失效",
+            "matched": "login_url",
+        }
+
+    keyword_groups = (
+        (
+            "kuaishou_publish_page_account_restricted",
+            "快手账号疑似发布权限受限",
+            ("封禁", "被封", "处罚", "违规", "账号受限", "发布权限受限", "暂无发布权限", "没有发布权限", "无发布权限", "禁止发布", "不能发布", "账号异常", "功能受限", "发布能力"),
+        ),
+        (
+            "kuaishou_publish_page_risk_verify",
+            "快手发布页需要风控验证",
+            ("安全验证", "风险验证", "人机验证", "滑块", "验证码", "请完成验证", "环境异常", "操作频繁"),
+        ),
+        (
+            "kuaishou_publish_page_login_invalid",
+            "快手登录状态失效",
+            ("扫码登录", "快手号登录", "账号登录", "登录快手", "请登录"),
+        ),
+        (
+            "kuaishou_publish_page_network_failed",
+            "快手发布页网络连接异常",
+            ("net::", "err_", "econn", "tls", "ssl", "read operation timed out", "连接超时", "网络异常", "加载失败"),
+        ),
+    )
+    for error_code, title, markers in keyword_groups:
+        marker = _first_matched_marker(text, markers)
+        if marker:
+            return {"error_code": error_code, "title": title, "matched": marker}
+
+    if default_error_code == "kuaishou_publish_page_ready":
+        return {"error_code": default_error_code, "title": "快手发布页可继续发布", "matched": ""}
+    return {
+        "error_code": default_error_code,
+        "title": "快手发布页结构变化或描述框不可用",
+        "matched": "",
+    }
+
+
+async def _safe_kuaishou_visible_text(page: Page) -> str:
+    try:
+        return _compact_page_text(await page.locator("body").inner_text(timeout=3000))
+    except TypeError:
+        try:
+            return _compact_page_text(await page.locator("body").inner_text())
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+
+
+async def _save_kuaishou_failure_screenshot(page: Page, account_file: str | os.PathLike, prefix: str) -> str:
+    try:
+        account_path = Path(account_file).expanduser()
+        if account_path.parent.name == "cookies":
+            log_dir = account_path.parent.parent / "logs"
+        else:
+            log_dir = Path.cwd() / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        screenshot_path = log_dir / f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        await page.screenshot(path=str(screenshot_path), full_page=True)
+        return str(screenshot_path.resolve())
+    except Exception as exc:
+        return f"截图保存失败: {exc}"
+
+
+async def _diagnose_kuaishou_publish_page(
+    page: Page,
+    account_file: str | os.PathLike,
+    *,
+    error: Exception | str | None = None,
+    default_error_code: str = "kuaishou_publish_page_ready",
+    save_screenshot: bool = False,
+) -> dict[str, str]:
+    visible_text = await _safe_kuaishou_visible_text(page)
+    error_text = str(error or "").strip()
+    state = _classify_kuaishou_publish_page_state(
+        url=str(getattr(page, "url", "") or ""),
+        visible_text=visible_text,
+        error=error_text,
+        default_error_code=default_error_code,
+    )
+    screenshot = ""
+    if save_screenshot:
+        screenshot = await _save_kuaishou_failure_screenshot(
+            page,
+            account_file,
+            state["error_code"],
+        )
+    return {
+        **state,
+        "url": str(getattr(page, "url", "") or ""),
+        "visible_text": visible_text,
+        "error": error_text,
+        "screenshot": screenshot,
+    }
+
+
+def _format_kuaishou_publish_page_error(diagnostics: dict[str, str]) -> str:
+    parts = [
+        f"{diagnostics.get('title') or '快手发布页不可继续'}（{diagnostics.get('error_code') or 'kuaishou_publish_page_unknown'}）",
+        f"当前 URL: {diagnostics.get('url') or 'unknown'}",
+    ]
+    if diagnostics.get("matched"):
+        parts.append(f"命中关键词: {diagnostics['matched']}")
+    if diagnostics.get("error"):
+        parts.append(f"底层错误: {diagnostics['error']}")
+    if diagnostics.get("visible_text"):
+        parts.append(f"页面摘要: {diagnostics['visible_text']}")
+    if diagnostics.get("screenshot"):
+        parts.append(f"现场截图: {diagnostics['screenshot']}")
+    return "；".join(parts)
+
+
+def build_kuaishou_context_options(
+    storage_state: str | os.PathLike | None = None,
+    *,
+    proxy: dict[str, Any] | None = None,
+) -> dict:
     options = dict(KUAISHOU_STABLE_CONTEXT_OPTIONS)
     if storage_state:
         options["storage_state"] = str(storage_state)
-    return options
+    return merge_proxy_context_options(options, proxy=proxy)
 
 
 class _ClosedCloakBrowser:
@@ -341,12 +497,14 @@ class KSBaseUploader(BaseVideoUploader):
         publish_strategy: str | None = None,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        proxy: dict[str, Any] | None = None,
     ):
         self.publish_date = publish_date
         self.account_file = str(account_file)
         self.publish_strategy = publish_strategy
         self.debug = debug
         self.headless = headless
+        self.proxy = normalize_playwright_proxy(proxy)
         self.local_executable_path = LOCAL_CHROME_PATH
         self.date_format = "%Y-%m-%d %H:%M"
 
@@ -410,8 +568,35 @@ class KSBaseUploader(BaseVideoUploader):
     async def open_publish_context(self):
         return await open_kuaishou_cloak_context(
             headless=self.headless,
-            context_options=build_kuaishou_context_options(self.account_file),
+            context_options=build_kuaishou_context_options(self.account_file, proxy=self.proxy),
         )
+
+    async def click_description_editor(self, page: Page) -> None:
+        diagnostics = await _diagnose_kuaishou_publish_page(page, self.account_file)
+        if diagnostics["error_code"] != "kuaishou_publish_page_ready":
+            diagnostics = await _diagnose_kuaishou_publish_page(
+                page,
+                self.account_file,
+                default_error_code=diagnostics["error_code"],
+                save_screenshot=True,
+            )
+            message = _format_kuaishou_publish_page_error(diagnostics)
+            kuaishou_logger.error(_msg("😢", message))
+            raise KuaishouPublishPageStateError(diagnostics["error_code"], message, diagnostics)
+
+        try:
+            await page.get_by_text("描述").locator("xpath=following-sibling::div").click()
+        except Exception as exc:
+            diagnostics = await _diagnose_kuaishou_publish_page(
+                page,
+                self.account_file,
+                error=exc,
+                default_error_code="kuaishou_publish_page_dom_changed",
+                save_screenshot=True,
+            )
+            message = _format_kuaishou_publish_page_error(diagnostics)
+            kuaishou_logger.error(_msg("😢", message))
+            raise KuaishouPublishPageStateError(diagnostics["error_code"], message, diagnostics) from exc
 
 
 class KSVideo(KSBaseUploader):
@@ -427,6 +612,7 @@ class KSVideo(KSBaseUploader):
         headless: bool = LOCAL_CHROME_HEADLESS,
         thumbnail_path=None,
         desc: str | None = None,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -434,6 +620,7 @@ class KSVideo(KSBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            proxy=proxy,
         )
         self.title = title
         self.file_path = file_path
@@ -517,7 +704,7 @@ class KSVideo(KSBaseUploader):
             await self.close_guide_overlay(page)
 
             kuaishou_logger.info(_msg("✍️", "小人开始填描述和话题"))
-            await page.get_by_text("描述").locator("xpath=following-sibling::div").click()
+            await self.click_description_editor(page)
             await page.keyboard.press("Backspace")
             await page.keyboard.press("Control+KeyA")
             await page.keyboard.press("Delete")
@@ -603,6 +790,7 @@ class KSNote(KSBaseUploader):
         publish_strategy: str | None = None,
         debug: bool = DEBUG_MODE,
         headless: bool = LOCAL_CHROME_HEADLESS,
+        proxy: dict[str, Any] | None = None,
     ):
         super().__init__(
             publish_date=publish_date,
@@ -610,6 +798,7 @@ class KSNote(KSBaseUploader):
             publish_strategy=publish_strategy,
             debug=debug,
             headless=headless,
+            proxy=proxy,
         )
         self.image_paths = image_paths
         self.note = note or ""
@@ -656,7 +845,7 @@ class KSNote(KSBaseUploader):
         await self.close_guide_overlay(page)
 
         kuaishou_logger.info(_msg("✍️", "小人开始填写图文内容和话题"))
-        await page.get_by_text("描述").locator("xpath=following-sibling::div").click()
+        await self.click_description_editor(page)
         await page.keyboard.press("Backspace")
         await page.keyboard.press("Control+KeyA")
         await page.keyboard.press("Delete")
