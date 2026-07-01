@@ -15,6 +15,13 @@ class BrowserCliParserTests(unittest.TestCase):
         self.assertEqual(args.platform, "xiaohongshu")
         self.assertEqual(args.action, "login")
 
+    def test_xiaohongshu_check_accepts_protocol_publish_mode(self):
+        parser = sau_cli.build_parser()
+        args = parser.parse_args(
+            ["xiaohongshu", "check", "--account", "creator", "--publish-mode", "protocol"]
+        )
+        self.assertEqual(args.publish_mode, "protocol")
+
     def test_douyin_upload_video_accepts_desc(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             video_path = Path(tmp_dir) / "demo.mp4"
@@ -80,11 +87,14 @@ class BrowserCliParserTests(unittest.TestCase):
                     "视频标题",
                     "--group-chat",
                     "手作交流群",
+                    "--products",
+                    "麦芽糖,12345",
                 ]
             )
 
         self.assertFalse(args.headless)
         self.assertEqual(args.group_chat, "手作交流群")
+        self.assertEqual(args.products, "麦芽糖,12345")
         self.assertEqual(args.publish_mode, "browser")
         self.assertFalse(args.confirm_protocol_publish)
 
@@ -174,6 +184,19 @@ class BrowserCliDispatchTests(unittest.TestCase):
             code = asyncio.run(sau_cli.dispatch(args))
         self.assertEqual(code, 0)
 
+    def test_dispatch_xiaohongshu_protocol_check_uses_protocol_validator(self):
+        args = Namespace(
+            platform="xiaohongshu",
+            action="check",
+            account="creator",
+            publish_mode="protocol",
+        )
+        with patch("sau_cli.check_xiaohongshu_protocol_account", new=AsyncMock(return_value=True)) as mock_check:
+            code = asyncio.run(sau_cli.dispatch(args))
+
+        self.assertEqual(code, 0)
+        mock_check.assert_awaited_once_with("creator")
+
     def test_dispatch_xiaohongshu_login_reports_home_login(self):
         args = Namespace(platform="xiaohongshu", action="login", account="creator", headless=False)
         login_result = {
@@ -253,6 +276,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             schedule=0,
             thumbnail=None,
             group_chat="手作交流群",
+            products="麦芽糖,12345",
             publish_mode="browser",
             confirm_protocol_publish=False,
             debug=False,
@@ -265,6 +289,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.title, "视频标题")
         self.assertEqual(request.description, "视频简介")
         self.assertEqual(request.group_chat, "手作交流群")
+        self.assertEqual(request.product_keywords, ["麦芽糖", "12345"])
         self.assertEqual(request.publish_mode, "browser")
         self.assertFalse(request.headless)
 
@@ -279,6 +304,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             tags="测试,图文",
             schedule=0,
             group_chat="图文群",
+            products="麦芽糖",
             publish_mode="browser",
             confirm_protocol_publish=False,
             debug=False,
@@ -291,6 +317,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(request.title, "图文标题")
         self.assertEqual(request.note, "图文正文")
         self.assertEqual(request.group_chat, "图文群")
+        self.assertEqual(request.product_keywords, ["麦芽糖"])
         self.assertEqual(request.publish_mode, "browser")
         self.assertFalse(request.headless)
         self.assertEqual(len(request.image_files), 2)
@@ -307,6 +334,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             schedule=0,
             thumbnail=None,
             group_chat="",
+            products="儿时",
             publish_mode="protocol",
             confirm_protocol_publish=True,
             debug=False,
@@ -317,6 +345,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
 
         request = mock_upload.await_args.args[0]
         self.assertEqual(request.publish_mode, "protocol")
+        self.assertEqual(request.product_keywords, ["儿时"])
         self.assertTrue(request.confirm_protocol_publish)
 
     def test_xiaohongshu_protocol_video_allows_group_chat(self):
@@ -338,6 +367,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             tags=["测试"],
             publish_date=0,
             group_chat="手作交流群",
+            product_keywords=["儿时"],
             publish_mode="protocol",
         )
 
@@ -349,6 +379,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
                     asyncio.run(sau_cli.upload_xiaohongshu_video(request))
 
         self.assertEqual(FakeProtocol.calls[0]["group_chat"], "手作交流群")
+        self.assertEqual(FakeProtocol.calls[0]["product_keywords"], ["儿时"])
 
     def test_xiaohongshu_protocol_video_rejects_unverified_thumbnail(self):
         request = sau_cli.XiaohongshuVideoUploadRequest(
@@ -408,6 +439,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
             tags=["测试"],
             publish_date=0,
             publish_mode="protocol",
+            product_keywords=["儿时"],
             confirm_protocol_publish=True,
         )
 
@@ -421,6 +453,7 @@ class BrowserCliDispatchTests(unittest.TestCase):
         self.assertEqual(FakeProtocol.kwargs["account_file"], account_file)
         self.assertEqual(FakeProtocol.calls[0]["title"], "视频标题")
         self.assertEqual(FakeProtocol.calls[0]["group_chat"], "")
+        self.assertEqual(FakeProtocol.calls[0]["product_keywords"], ["儿时"])
         self.assertTrue(FakeProtocol.calls[0]["confirm_publish"])
 
     def test_xiaohongshu_video_upload_does_not_open_cookie_probe_before_publish(self):

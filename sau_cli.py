@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -112,6 +112,7 @@ class XiaohongshuVideoUploadRequest:
     publish_date: datetime | int
     thumbnail_file: Path | None = None
     group_chat: str = ""
+    product_keywords: list[str] = field(default_factory=list)
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
@@ -129,6 +130,7 @@ class XiaohongshuNoteUploadRequest:
     tags: list[str]
     publish_date: datetime | int
     group_chat: str = ""
+    product_keywords: list[str] = field(default_factory=list)
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
@@ -177,6 +179,18 @@ def parse_tags(raw_tags: str | None) -> list[str]:
     return tags
 
 
+def parse_product_keywords(raw_products: str | None) -> list[str]:
+    if not raw_products:
+        return []
+
+    products: list[str] = []
+    for item in raw_products.split(","):
+        cleaned = item.strip()
+        if cleaned:
+            products.append(cleaned)
+    return products
+
+
 def parse_image_files(raw_files: Iterable[Path]) -> list[Path]:
     return [Path(file) for file in raw_files]
 
@@ -221,6 +235,14 @@ async def check_xiaohongshu_account(account_name: str) -> bool:
     if not account_file.exists():
         return False
     return await xiaohongshu_cookie_auth(str(account_file), headless=False)
+
+
+async def check_xiaohongshu_protocol_account(account_name: str) -> bool:
+    account_file = resolve_account_file("xiaohongshu", account_name)
+    if not account_file.exists():
+        return False
+    XhsCreatorProtocol(account_file).validate_login_state()
+    return True
 
 
 async def login_bilibili_account(account_name: str) -> dict:
@@ -371,6 +393,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
             description=request.description,
             tags=request.tags,
             group_chat=request.group_chat,
+            product_keywords=request.product_keywords,
             confirm_publish=request.confirm_protocol_publish,
         )
         return account_file
@@ -414,6 +437,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
             note=request.note,
             tags=request.tags,
             group_chat=request.group_chat,
+            product_keywords=request.product_keywords,
             confirm_publish=request.confirm_protocol_publish,
         )
         return account_file
@@ -595,6 +619,12 @@ def build_parser() -> argparse.ArgumentParser:
         if action_name == "login":
             add_runtime_flags(action_parser, default_headless=False)
         else:
+            action_parser.add_argument(
+                "--publish-mode",
+                choices=(XIAOHONGSHU_PUBLISH_MODE_BROWSER, XIAOHONGSHU_PUBLISH_MODE_PROTOCOL),
+                default=XIAOHONGSHU_PUBLISH_MODE_BROWSER,
+                help="Check browser cookie state or protocol upload credential state.",
+            )
             add_proxy_flags(action_parser)
 
     xiaohongshu_upload_video_parser = xiaohongshu_actions.add_parser("upload-video", help="Upload one video to Xiaohongshu")
@@ -606,6 +636,11 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_video_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_video_parser.add_argument("--thumbnail", type=existing_file_path, help="Optional thumbnail path")
     xiaohongshu_upload_video_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
+    xiaohongshu_upload_video_parser.add_argument(
+        "--products",
+        default="",
+        help="Comma-separated Xiaohongshu product IDs or product names to bind in protocol mode",
+    )
     xiaohongshu_upload_video_parser.add_argument(
         "--publish-mode",
         choices=(XIAOHONGSHU_PUBLISH_MODE_BROWSER, XIAOHONGSHU_PUBLISH_MODE_PROTOCOL),
@@ -627,6 +662,11 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_note_parser.add_argument("--tags", default="", help="Comma-separated tags, such as tag1,tag2")
     xiaohongshu_upload_note_parser.add_argument("--schedule", type=schedule_value, help=f"Schedule time in {schedule_help}")
     xiaohongshu_upload_note_parser.add_argument("--group-chat", default="", help="Optional Xiaohongshu group chat name to bind")
+    xiaohongshu_upload_note_parser.add_argument(
+        "--products",
+        default="",
+        help="Comma-separated Xiaohongshu product IDs or product names to bind in protocol mode",
+    )
     xiaohongshu_upload_note_parser.add_argument(
         "--publish-mode",
         choices=(XIAOHONGSHU_PUBLISH_MODE_BROWSER, XIAOHONGSHU_PUBLISH_MODE_PROTOCOL),
@@ -794,7 +834,11 @@ async def dispatch(args: argparse.Namespace) -> int:
             return 0
 
         if args.action == "check":
-            is_valid = await check_xiaohongshu_account(args.account)
+            publish_mode = getattr(args, "publish_mode", XIAOHONGSHU_PUBLISH_MODE_BROWSER)
+            if publish_mode == XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
+                is_valid = await check_xiaohongshu_protocol_account(args.account)
+            else:
+                is_valid = await check_xiaohongshu_account(args.account)
             print("valid" if is_valid else "invalid")
             return 0 if is_valid else 1
 
@@ -812,6 +856,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_date=args.schedule or 0,
                 thumbnail_file=args.thumbnail,
                 group_chat=getattr(args, "group_chat", ""),
+                product_keywords=parse_product_keywords(getattr(args, "products", "")),
                 publish_strategy=publish_strategy,
                 publish_mode=args.publish_mode,
                 confirm_protocol_publish=args.confirm_protocol_publish,
@@ -832,6 +877,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 tags=parse_tags(args.tags),
                 publish_date=args.schedule or 0,
                 group_chat=getattr(args, "group_chat", ""),
+                product_keywords=parse_product_keywords(getattr(args, "products", "")),
                 publish_strategy=publish_strategy,
                 publish_mode=args.publish_mode,
                 confirm_protocol_publish=args.confirm_protocol_publish,
