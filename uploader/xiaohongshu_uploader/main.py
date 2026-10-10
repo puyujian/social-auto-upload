@@ -381,18 +381,10 @@ async def xiaohongshu_cookie_gen(
             if await _is_xhs_login_completed(page):
                 await asyncio.sleep(2)
                 await context.storage_state(path=account_file)
-                if await cookie_auth(account_file, headless=headless):
-                    xiaohongshu_logger.success(_msg("🥳", "小红书扫码登录成功，小人开心收工"))
-                    result = _build_login_result(True, "success", "小红书扫码登录成功", account_file, qrcode_info, page.url)
-                else:
-                    result = _build_login_result(
-                        False,
-                        "cookie_invalid",
-                        "小红书扫码流程结束，但 cookie 校验失败",
-                        account_file,
-                        qrcode_info,
-                        page.url,
-                    )
+                # 当前页面已经确认登录；再启动一个浏览器校验会占用双倍内存，
+                # 且新设备校验可能触发风控，导致已保存 Cookie 却迟迟不返回。
+                xiaohongshu_logger.success(_msg("🥳", "小红书扫码登录成功，小人开心收工"))
+                result = _build_login_result(True, "success", "小红书扫码登录成功", account_file, qrcode_info, page.url)
                 return result
 
             await asyncio.sleep(poll_interval)

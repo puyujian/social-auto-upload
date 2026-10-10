@@ -134,6 +134,8 @@ class XiaohongshuNoteUploadRequest:
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
+    long_article_album_id: int | None = None
+    long_article_word_count: int | None = None
     debug: bool = True
     headless: bool = False
     proxy: dict[str, str] | None = None
@@ -418,6 +420,10 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
 
 
 async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path:
+    if (request.long_article_album_id is None) != (request.long_article_word_count is None):
+        raise RuntimeError("长文模板和字数必须同时提供")
+    if request.long_article_album_id is not None and request.publish_mode != XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
+        raise RuntimeError("长文图片必须使用协议发布")
     account_file = resolve_account_file("xiaohongshu", request.account_name)
     if not account_file.exists():
         raise RuntimeError(
@@ -439,6 +445,9 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
             group_chat=request.group_chat,
             product_keywords=request.product_keywords,
             confirm_publish=request.confirm_protocol_publish,
+            **({'long_article_album_id': request.long_article_album_id,
+                'long_article_word_count': request.long_article_word_count}
+               if request.long_article_album_id is not None else {}),
         )
         return account_file
 
@@ -679,6 +688,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow protocol mode to call the final public publish API.",
     )
     add_runtime_flags(xiaohongshu_upload_note_parser, default_headless=False)
+    xiaohongshu_upload_note_parser.add_argument('--long-article-album-id', type=int)
+    xiaohongshu_upload_note_parser.add_argument('--long-article-word-count', type=int)
+    article_parser = xiaohongshu_actions.add_parser('generate-article', help='Render an article locally without publishing')
+    article_parser.add_argument('--account', required=True)
+    article_parser.add_argument('--input', required=True, type=existing_file_path)
+    article_parser.add_argument('--output-dir', required=True, type=Path)
+    add_runtime_flags(article_parser, default_headless=True)
 
     bilibili_parser = platform_parsers.add_parser("bilibili", help="Bilibili operations")
     bilibili_actions = bilibili_parser.add_subparsers(dest="action", required=True)
@@ -826,6 +842,12 @@ async def dispatch(args: argparse.Namespace) -> int:
         raise RuntimeError(f"Unsupported Kuaishou action: {args.action}")
 
     if args.platform == "xiaohongshu":
+        if args.action == 'generate-article':
+            from uploader.xiaohongshu_uploader.long_article import generate_article
+            await generate_article(resolve_account_file('xiaohongshu', args.account), args.input,
+                                   args.output_dir, headless=args.headless)
+            print('Xiaohongshu article images generated; no note published')
+            return 0
         if args.action == "login":
             result = await login_xiaohongshu_account(args.account, headless=args.headless)
             if not result["success"]:
@@ -881,6 +903,8 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 publish_mode=args.publish_mode,
                 confirm_protocol_publish=args.confirm_protocol_publish,
+                long_article_album_id=getattr(args, 'long_article_album_id', None),
+                long_article_word_count=getattr(args, 'long_article_word_count', None),
                 debug=args.debug,
                 headless=args.headless,
                 proxy=proxy,

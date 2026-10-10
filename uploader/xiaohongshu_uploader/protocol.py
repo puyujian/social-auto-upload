@@ -286,11 +286,19 @@ class XhsCreatorProtocol:
         group_chat: str = "",
         product_keywords: list[str] | None = None,
         confirm_publish: bool = False,
+        long_article_album_id: int | None = None,
+        long_article_word_count: int | None = None,
     ) -> dict[str, Any]:
         if not image_files:
             raise XiaohongshuProtocolError("小红书协议图文发布至少需要 1 张图片")
+        if (long_article_album_id is None) != (long_article_word_count is None):
+            raise XiaohongshuProtocolError('长文模板和字数必须同时提供')
+        if long_article_album_id is not None and (long_article_album_id < 0 or long_article_word_count < 0):
+            raise XiaohongshuProtocolError('长文模板和字数无效')
         file_infos = [self.upload_media(Path(path).read_bytes(), "image").as_reference_dict() for path in image_files]
         payload = build_image_note_payload(title=title, description=note, file_infos=file_infos)
+        if long_article_album_id is not None:
+            inject_long_article_trace(payload, long_article_album_id, long_article_word_count)
         return self._post_note(
             payload,
             tags=tags,
@@ -435,10 +443,41 @@ class XhsCreatorProtocol:
             data=body.encode("utf-8"),
             timeout=REQUEST_TIMEOUT,
         )
+        if response.status_code == 401:
+            # A valid main-site QR session can lack the creator SSO cookies.
+            # Exchange the existing session exactly as the official entry does;
+            # do not ask the user to log in again or drop the goods binding.
+            self._refresh_creator_authorization()
+            response = self.session.post(
+                ARK_BASE_URL + XHS_GOODS_LIST_API,
+                headers=headers,
+                cookies=self.cookies,
+                data=body.encode("utf-8"),
+                timeout=REQUEST_TIMEOUT,
+            )
         payload = parse_json_response(response, f"查询小红书商品失败: {keyword}")
         if not payload.get("success"):
             raise XiaohongshuProtocolError(str(payload.get("msg") or f"查询小红书商品失败: {keyword}"))
         return extract_goods_list(payload)
+
+    def _refresh_creator_authorization(self) -> None:
+        api = "/api/cas/customer/web/service-ticket"
+        data = {"service": CREATOR_BASE_URL, "source": "official", "type": "tgt"}
+        headers = ark_json_headers()
+        headers["x-ratelimit-meta"] = "host=creator.xiaohongshu.com"
+        signature, body = self.signer.sign_post(api, data)
+        headers.update(signature)
+        response = self.session.post(
+            "https://customer.xiaohongshu.com" + api,
+            headers=headers,
+            cookies=self.cookies,
+            data=body.encode("utf-8"),
+            timeout=REQUEST_TIMEOUT,
+        )
+        payload = parse_json_response(response, "自动获取小红书创作平台授权失败")
+        if not payload.get("success"):
+            raise XiaohongshuProtocolError("自动获取小红书创作平台授权失败，请检查主站登录状态")
+        self.cookies.update(self.session.cookies.get_dict())
 
     def resolve_goods_bindings(self, product_keywords: list[str]) -> list[dict[str, Any]]:
         goods: list[dict[str, Any]] = []
@@ -833,6 +872,16 @@ def inject_goods_relations(payload: dict[str, Any], relations: list[dict[str, An
     if not isinstance(existing, list):
         raise XiaohongshuProtocolError("小红书 biz_relations 结构异常，无法写入商品绑定")
     common["biz_relations"] = [*existing, *relations]
+
+
+def inject_long_article_trace(payload: dict[str, Any], album_id: int, word_count: int) -> None:
+    trace = payload['common'].setdefault('capa_trace_info', {})
+    context = json.loads(trace.get('contextJson') or '{}')
+    file_ids = [item['file_id'] for item in payload['image_info']['images']]
+    if not file_ids or len(file_ids) > 18:
+        raise XiaohongshuProtocolError('长文图片数量必须为1至18张')
+    context['longTextToImage'] = {'albumId': album_id, 'imageFileIds': file_ids, 'wordCount': word_count}
+    trace['contextJson'] = _compact_json(context)
 
 
 def inject_topic_trace(payload: dict[str, Any], topic: dict[str, str]) -> None:
