@@ -19,6 +19,8 @@ from urllib.parse import urlencode, urlparse
 import cv2
 import requests
 
+from .publish_receipts import PublishReceipt
+
 
 REQUEST_TIMEOUT = 30
 CREATOR_BASE_URL = "https://creator.xiaohongshu.com"
@@ -235,11 +237,13 @@ class CreatorSigner:
 
 
 class XhsCreatorProtocol:
-    def __init__(self, account_file: str | Path, *, session: requests.Session | None = None):
+    def __init__(self, account_file: str | Path, *, session: requests.Session | None = None,
+                 idempotency_key: str = ''):
         self.account_file = Path(account_file)
         self.cookies = load_cookie_state(self.account_file)
         self.signer = CreatorSigner(self.cookies)
         self.session = session or requests.Session()
+        self.receipt = PublishReceipt(account_file, idempotency_key) if idempotency_key else None
 
     def validate_login_state(self) -> dict[str, Any]:
         return self.request_upload_permit("image")
@@ -289,6 +293,10 @@ class XhsCreatorProtocol:
         long_article_album_id: int | None = None,
         long_article_word_count: int | None = None,
     ) -> dict[str, Any]:
+        if self.receipt:
+            cached = self.receipt.cached()
+            if cached is not None:
+                return cached
         if not image_files:
             raise XiaohongshuProtocolError("小红书协议图文发布至少需要 1 张图片")
         if (long_article_album_id is None) != (long_article_word_count is None):
@@ -533,17 +541,7 @@ class XhsCreatorProtocol:
         product_keywords: list[str] | None = None,
         confirm_publish: bool,
     ) -> dict[str, Any]:
-        topic_names: list[str] = []
-        for tag in normalize_topic_tags(tags)[:XHS_MAX_TOPICS]:
-            try:
-                topic = self.search_topic(tag)
-            except XiaohongshuTopicNotFoundError:
-                topic_names.append(tag)
-                continue
-            payload["common"]["hash_tag"].append(topic)
-            inject_topic_trace(payload, topic)
-            topic_names.append(str(topic.get("name") or tag).strip() or tag)
-        append_topic_names_to_desc(payload, topic_names)
+        self._bind_topics(payload, tags)
 
         if str(group_chat or "").strip():
             inject_group_bind(payload, self.resolve_group_bind(group_chat))
@@ -560,17 +558,79 @@ class XhsCreatorProtocol:
         api = "/web_api/sns/v2/note"
         headers, body = self._signed_post_headers(api, payload)
         headers["x-rap-param"] = generate_x_rap_param(api, body)
-        response = self.session.post(
-            EDITH_BASE_URL + api,
-            headers=headers,
-            cookies=self.cookies,
-            data=body.encode("utf-8"),
-            timeout=REQUEST_TIMEOUT,
-        )
+        if self.receipt:
+            cached = self.receipt.claim()
+            if cached is not None:
+                return cached
+        try:
+            response = self.session.post(
+                EDITH_BASE_URL + api, headers=headers, cookies=self.cookies,
+                data=body.encode("utf-8"), timeout=REQUEST_TIMEOUT,
+            )
+        except requests.ConnectTimeout:
+            if self.receipt:
+                self.receipt.reject()
+            raise
+        if self.receipt and response.status_code in (400, 401, 403, 404, 409, 422, 429):
+            self.receipt.reject()
         result = parse_json_response(response, "小红书协议发布失败")
         if not result.get("success"):
+            if self.receipt:
+                self.receipt.reject()
             raise XiaohongshuProtocolError(str(result.get("msg") or "小红书协议发布失败"))
+        if self.receipt:
+            self.receipt.confirm(result)
         return result
+
+    def _bind_topics(self, payload: dict[str, Any], tags: list[str]) -> dict[str, Any]:
+        common = payload.setdefault("common", {})
+        prose, inline_tags = split_trailing_topic_tags(str(common.get("desc") or ""))
+        requested = normalize_topic_tags(list(tags or []) + inline_tags)[:XHS_MAX_TOPICS]
+        common["desc"] = prose
+        common["hash_tag"] = []
+        topic_names, skipped = [], []
+        for tag in requested:
+            try:
+                topic = self.search_topic(tag)
+            except XiaohongshuTopicNotFoundError:
+                skipped.append(tag)
+                continue
+            common["hash_tag"].append(topic)
+            inject_topic_trace(payload, topic)
+            topic_names.append(str(topic.get("name") or tag).strip() or tag)
+        append_topic_names_to_desc(payload, topic_names)
+        return {"requested": requested, "bound": list(common["hash_tag"]), "skipped": skipped}
+
+    def query_note_detail(self, note_id: str) -> dict[str, Any]:
+        return self._get_note_api("/web_api/sns/capa/postgw/note/detail",
+            {"note_id": note_id, "source": "web", "edit_mode": 1})
+
+    def _get_note_api(self, api: str, params: dict[str, Any]) -> dict[str, Any]:
+        query = urlencode(params)
+        headers = edith_json_headers()
+        headers.update(self.signer.sign_get(api + "?" + query))
+        response = self.session.get(EDITH_BASE_URL + api + "?" + query,
+            headers=headers, cookies=self.cookies, timeout=REQUEST_TIMEOUT)
+        result = parse_json_response(response, "读取小红书笔记编辑数据失败")
+        if not result.get("success"):
+            raise XiaohongshuProtocolError("无法读取该账号的笔记编辑数据")
+        return result.get("data") or {}
+
+    def update_note_topics(self, note_id: str, *, confirm_update: bool = False) -> dict[str, Any]:
+        note = self.query_note_detail(note_id)
+        binds = self._get_note_api("/web_api/sns/capa/postgw/note/business_bind", {"note_id": note_id})
+        payload = build_topic_update_payload(note, binds)
+        binding = self._bind_topics(payload, [t.get("name", "") for t in note.get("hash_tag", [])])
+        if not confirm_update:
+            return {"payload": payload, "binding": binding, "note_id": note_id}
+        api = "/web_api/sns/capa/postgw/note/update"
+        headers, body = self._signed_post_headers(api, payload)
+        response = self.session.put(EDITH_BASE_URL + api, headers=headers, cookies=self.cookies,
+            data=body.encode("utf-8"), timeout=REQUEST_TIMEOUT)
+        result = parse_json_response(response, "更新小红书笔记话题失败")
+        if not result.get("success"):
+            raise XiaohongshuProtocolError(str(result.get("msg") or "更新小红书笔记话题失败"))
+        return {"result": result, "binding": binding, "note_id": note_id}
 
     def _signed_post_headers(self, api: str, data: dict[str, Any] | str) -> tuple[dict[str, str], str]:
         headers = edith_json_headers()
@@ -922,10 +982,55 @@ def append_topic_names_to_desc(payload: dict[str, Any], topic_names: list[str]) 
 def normalize_topic_tags(tags: list[str]) -> list[str]:
     normalized: list[str] = []
     for tag in tags:
-        cleaned = str(tag or "").strip().lstrip("#").strip()
-        if cleaned:
+        cleaned = str(tag or "").strip().lstrip("#").removesuffix("[话题]#").removesuffix("#").strip()
+        if cleaned and cleaned not in normalized:
             normalized.append(cleaned)
     return normalized
+
+
+def split_trailing_topic_tags(text: str) -> tuple[str, list[str]]:
+    token = re.compile(r"#([^#\s\[\]，,、;；]+)(?:\[话题\]#|#)?")
+    lines = text.splitlines(keepends=True)
+    end, blocks = len(lines), []
+    while end:
+        line = lines[end - 1]
+        if not line.strip():
+            end -= 1
+            continue
+        matches, cursor = list(token.finditer(line)), 0
+        if not matches:
+            break
+        for match in matches:
+            if line[cursor:match.start()].strip(" \t\r\n，,、;；"):
+                break
+            cursor = match.end()
+        else:
+            if not line[cursor:].strip(" \t\r\n，,、;；"):
+                blocks.append([m.group(1) for m in matches])
+                end -= 1
+                continue
+        break
+    if not blocks:
+        return text, []
+    tags = normalize_topic_tags([name for block in reversed(blocks) for name in block])
+    return "".join(lines[:end]).rstrip(), tags
+
+
+def build_topic_update_payload(note: dict[str, Any], binds: dict[str, Any]) -> dict[str, Any]:
+    if note.get("type") != "normal" or not note.get("id"):
+        raise XiaohongshuProtocolError("当前话题修复只支持已有图文笔记")
+    common = common_payload("normal", note["title"], note["desc"])
+    common.update(note_id=note["id"], ats=note.get("ats") or [],
+        metadata=note.get("metadata_str") or "{}", biz_relations=note.get("biz_relations") or [],
+        privacy_info={"op_type": 1, "type": note.get("privacy", {}).get("type", 0),
+                      "user_ids": note.get("privacy", {}).get("user_ids", [])})
+    common["business_binds"] = _compact_json({**json.loads(common["business_binds"]), **binds})
+    images = [{"file_id": image["fileid"], "width": image["width"], "height": image["height"],
+        "metadata": {"source": -1}, "stickers": {"version": 2, "floating": []},
+        "extra_info_json": _compact_json({"mimeType": "image/png"})} for image in note.get("images_list", [])]
+    if not images:
+        raise XiaohongshuProtocolError("已有笔记的图片数据缺失，禁止更新")
+    return {"common": common, "image_info": {"images": images}, "video_info": None}
 
 
 def build_group_bind(group: dict[str, Any], requested_name: str = "") -> dict[str, Any]:

@@ -188,5 +188,8 @@ cookiesFile
 uploadFile
 videoFile
 
+# 发布回执（运行时状态，用于避免重复发帖）
+.publish-receipts/
+
 /uploader/bilibili_uploader/qrcode.png
 .ace-tool/

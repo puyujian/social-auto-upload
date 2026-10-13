@@ -354,7 +354,7 @@ class XiaohongshuProtocolTests(unittest.TestCase):
         self.assertIn("\n\n#tag-0[话题]# #tag-1[话题]#", payload["common"]["desc"])
         self.assertNotIn("#tag-0[话题]#\n\n#tag-1[话题]#", payload["common"]["desc"])
 
-    def test_post_note_keeps_text_topic_when_official_topic_not_found(self):
+    def test_post_note_skips_unmatched_topic_instead_of_plain_text(self):
         class FakeProtocol(protocol.XhsCreatorProtocol):
             def __init__(self):
                 self.cookies = {"a1": "1" * 52}
@@ -381,7 +381,8 @@ class XiaohongshuProtocolTests(unittest.TestCase):
             )
 
         self.assertEqual(payload["common"]["hash_tag"], [{"id": "topic-1", "name": "麦芽糖", "link": "", "type": "topic"}])
-        self.assertIn("\n\n#麦芽糖泡牛奶[话题]# #麦芽糖[话题]#", payload["common"]["desc"])
+        self.assertEqual("正文\n\n#麦芽糖[话题]#", payload["common"]["desc"])
+        self.assertNotIn("麦芽糖泡牛奶", payload["common"]["desc"])
         context = json.loads(payload["common"]["capa_trace_info"]["contextJson"])
         self.assertEqual(
             context["recommend_topics"]["used"],

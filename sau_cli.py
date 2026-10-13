@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -134,6 +135,7 @@ class XiaohongshuNoteUploadRequest:
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
+    idempotency_key: str = ""
     long_article_album_id: int | None = None
     long_article_word_count: int | None = None
     debug: bool = True
@@ -436,8 +438,9 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
             group_chat=request.group_chat,
             thumbnail_file=None,
         )
-        protocol = XhsCreatorProtocol(account_file)
-        protocol.publish_note(
+        protocol = XhsCreatorProtocol(account_file,
+            **({'idempotency_key': request.idempotency_key} if request.idempotency_key else {}))
+        result = protocol.publish_note(
             image_files=[str(path) for path in request.image_files],
             title=request.title,
             note=request.note,
@@ -449,6 +452,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
                 'long_article_word_count': request.long_article_word_count}
                if request.long_article_album_id is not None else {}),
         )
+        print('SAU_PUBLISH_RESULT_JSON:' + json.dumps(result, ensure_ascii=False), flush=True)
         return account_file
 
     app = XiaoHongShuNote(
@@ -690,6 +694,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_runtime_flags(xiaohongshu_upload_note_parser, default_headless=False)
     xiaohongshu_upload_note_parser.add_argument('--long-article-album-id', type=int)
     xiaohongshu_upload_note_parser.add_argument('--long-article-word-count', type=int)
+    xiaohongshu_upload_note_parser.add_argument('--idempotency-key', default='')
     article_parser = xiaohongshu_actions.add_parser('generate-article', help='Render an article locally without publishing')
     article_parser.add_argument('--account', required=True)
     article_parser.add_argument('--input', required=True, type=existing_file_path)
@@ -905,6 +910,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 confirm_protocol_publish=args.confirm_protocol_publish,
                 long_article_album_id=getattr(args, 'long_article_album_id', None),
                 long_article_word_count=getattr(args, 'long_article_word_count', None),
+                idempotency_key=getattr(args, 'idempotency_key', ''),
                 debug=args.debug,
                 headless=args.headless,
                 proxy=proxy,
