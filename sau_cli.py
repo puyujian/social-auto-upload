@@ -117,6 +117,7 @@ class XiaohongshuVideoUploadRequest:
     publish_strategy: str = XIAOHONGSHU_PUBLISH_STRATEGY_IMMEDIATE
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
+    idempotency_key: str = ""
     debug: bool = True
     headless: bool = False
     proxy: dict[str, str] | None = None
@@ -136,6 +137,7 @@ class XiaohongshuNoteUploadRequest:
     publish_mode: str = XIAOHONGSHU_PUBLISH_MODE_BROWSER
     confirm_protocol_publish: bool = False
     idempotency_key: str = ""
+    live_photo: bool = False
     long_article_album_id: int | None = None
     long_article_word_count: int | None = None
     debug: bool = True
@@ -241,11 +243,16 @@ async def check_xiaohongshu_account(account_name: str) -> bool:
     return await xiaohongshu_cookie_auth(str(account_file), headless=False)
 
 
-async def check_xiaohongshu_protocol_account(account_name: str) -> bool:
+async def check_xiaohongshu_protocol_account(
+    account_name: str, product_keywords: list[str] | None = None,
+) -> bool:
     account_file = resolve_account_file("xiaohongshu", account_name)
     if not account_file.exists():
         return False
-    XhsCreatorProtocol(account_file).validate_login_state()
+    client = XhsCreatorProtocol(account_file)
+    client.validate_login_state()
+    if product_keywords:
+        client.resolve_goods_bindings(product_keywords)
     return True
 
 
@@ -390,8 +397,8 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
             group_chat=request.group_chat,
             thumbnail_file=request.thumbnail_file,
         )
-        protocol = XhsCreatorProtocol(account_file)
-        protocol.publish_video(
+        protocol = XhsCreatorProtocol(account_file, **({'idempotency_key': request.idempotency_key} if request.idempotency_key else {}))
+        result = protocol.publish_video(
             video_file=request.video_file,
             title=request.title,
             description=request.description,
@@ -400,6 +407,7 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
             product_keywords=request.product_keywords,
             confirm_publish=request.confirm_protocol_publish,
         )
+        print('SAU_PUBLISH_RESULT_JSON:' + json.dumps(result, ensure_ascii=False))
         return account_file
 
     app = XiaoHongShuVideo(
@@ -422,6 +430,8 @@ async def upload_xiaohongshu_video(request: XiaohongshuVideoUploadRequest) -> Pa
 
 
 async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path:
+    if request.live_photo and request.publish_mode != XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
+        raise RuntimeError("实况图需要使用协议发布方式")
     if (request.long_article_album_id is None) != (request.long_article_word_count is None):
         raise RuntimeError("长文模板和字数必须同时提供")
     if request.long_article_album_id is not None and request.publish_mode != XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
@@ -448,6 +458,7 @@ async def upload_xiaohongshu_note(request: XiaohongshuNoteUploadRequest) -> Path
             group_chat=request.group_chat,
             product_keywords=request.product_keywords,
             confirm_publish=request.confirm_protocol_publish,
+            **({'live_photo': True} if request.live_photo else {}),
             **({'long_article_album_id': request.long_article_album_id,
                 'long_article_word_count': request.long_article_word_count}
                if request.long_article_album_id is not None else {}),
@@ -638,6 +649,9 @@ def build_parser() -> argparse.ArgumentParser:
                 default=XIAOHONGSHU_PUBLISH_MODE_BROWSER,
                 help="Check browser cookie state or protocol upload credential state.",
             )
+            action_parser.add_argument(
+                "--products", default="", help="Also verify these product keywords without publishing.",
+            )
             add_proxy_flags(action_parser)
 
     xiaohongshu_upload_video_parser = xiaohongshu_actions.add_parser("upload-video", help="Upload one video to Xiaohongshu")
@@ -666,6 +680,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Allow protocol mode to call the final public publish API.",
     )
     add_runtime_flags(xiaohongshu_upload_video_parser, default_headless=False)
+    xiaohongshu_upload_video_parser.add_argument('--idempotency-key', default='')
 
     xiaohongshu_upload_note_parser = xiaohongshu_actions.add_parser("upload-note", help="Upload one note to Xiaohongshu")
     xiaohongshu_upload_note_parser.add_argument("--account", required=True, help="Xiaohongshu user-defined account_name")
@@ -695,6 +710,7 @@ def build_parser() -> argparse.ArgumentParser:
     xiaohongshu_upload_note_parser.add_argument('--long-article-album-id', type=int)
     xiaohongshu_upload_note_parser.add_argument('--long-article-word-count', type=int)
     xiaohongshu_upload_note_parser.add_argument('--idempotency-key', default='')
+    xiaohongshu_upload_note_parser.add_argument('--live-photo', action='store_true', help='Publish every image as a 30 fps Live Photo')
     article_parser = xiaohongshu_actions.add_parser('generate-article', help='Render an article locally without publishing')
     article_parser.add_argument('--account', required=True)
     article_parser.add_argument('--input', required=True, type=existing_file_path)
@@ -863,7 +879,11 @@ async def dispatch(args: argparse.Namespace) -> int:
         if args.action == "check":
             publish_mode = getattr(args, "publish_mode", XIAOHONGSHU_PUBLISH_MODE_BROWSER)
             if publish_mode == XIAOHONGSHU_PUBLISH_MODE_PROTOCOL:
-                is_valid = await check_xiaohongshu_protocol_account(args.account)
+                products = parse_product_keywords(getattr(args, "products", ""))
+                is_valid = (
+                    await check_xiaohongshu_protocol_account(args.account, products)
+                    if products else await check_xiaohongshu_protocol_account(args.account)
+                )
             else:
                 is_valid = await check_xiaohongshu_account(args.account)
             print("valid" if is_valid else "invalid")
@@ -887,6 +907,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 publish_strategy=publish_strategy,
                 publish_mode=args.publish_mode,
                 confirm_protocol_publish=args.confirm_protocol_publish,
+                idempotency_key=getattr(args, 'idempotency_key', ''),
                 debug=args.debug,
                 headless=args.headless,
                 proxy=proxy,
@@ -911,6 +932,7 @@ async def dispatch(args: argparse.Namespace) -> int:
                 long_article_album_id=getattr(args, 'long_article_album_id', None),
                 long_article_word_count=getattr(args, 'long_article_word_count', None),
                 idempotency_key=getattr(args, 'idempotency_key', ''),
+                live_photo=getattr(args, 'live_photo', False),
                 debug=args.debug,
                 headless=args.headless,
                 proxy=proxy,

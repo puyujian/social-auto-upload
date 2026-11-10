@@ -4,7 +4,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import io
 import json
+import logging
 import random
 import re
 import struct
@@ -18,11 +20,15 @@ from urllib.parse import urlencode, urlparse
 
 import cv2
 import requests
+from PIL import Image
 
 from .publish_receipts import PublishReceipt
+from .live_photo import gif_to_live_photo, image_to_live_photo
 
 
 REQUEST_TIMEOUT = 30
+GOODS_QUERY_MAX_ATTEMPTS = 4
+GOODS_QUERY_RETRY_DELAYS = (1, 2, 4)
 CREATOR_BASE_URL = "https://creator.xiaohongshu.com"
 EDITH_BASE_URL = "https://edith.xiaohongshu.com"
 ARK_BASE_URL = "https://ark.xiaohongshu.com"
@@ -38,6 +44,7 @@ TRANSCODE_RETRY_DELAY_SECONDS = 3
 XHS_PRIVACY_PUBLIC = 0
 XHS_PRIVACY_PRIVATE = 1
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+logger = logging.getLogger(__name__)
 
 
 class XiaohongshuProtocolError(RuntimeError):
@@ -46,6 +53,10 @@ class XiaohongshuProtocolError(RuntimeError):
 
 class XiaohongshuTopicNotFoundError(XiaohongshuProtocolError):
     """小红书官方话题搜索没有返回可绑定话题。"""
+
+
+class XiaohongshuGoodsUnavailableError(XiaohongshuProtocolError):
+    """The goods endpoint did not return a usable, authorized catalog."""
 
 
 @dataclass(slots=True)
@@ -246,7 +257,15 @@ class XhsCreatorProtocol:
         self.receipt = PublishReceipt(account_file, idempotency_key) if idempotency_key else None
 
     def validate_login_state(self) -> dict[str, Any]:
-        return self.request_upload_permit("image")
+        permit = self.request_upload_permit("image")
+        try:
+            item = permit["data"]["uploadTempPermits"][0]
+            if (not item["token"] or not item["fileIds"][0]
+                    or int(str(item["expireTime"])[:10]) <= int(time.time())):
+                raise ValueError("empty or expired upload permit")
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise XiaohongshuProtocolError("小红书上传凭证结构异常或已过期，请重新扫码登录") from exc
+        return permit
 
     def publish_video(
         self,
@@ -259,6 +278,10 @@ class XhsCreatorProtocol:
         product_keywords: list[str] | None = None,
         confirm_publish: bool = False,
     ) -> dict[str, Any]:
+        if self.receipt:
+            cached = self.receipt.cached()
+            if cached is not None:
+                return cached
         video_bytes = Path(video_file).read_bytes()
         cover_bytes, metadata = extract_video_cover_and_metadata(video_bytes)
         video_info = self.upload_media(video_bytes, "video")
@@ -292,6 +315,7 @@ class XhsCreatorProtocol:
         confirm_publish: bool = False,
         long_article_album_id: int | None = None,
         long_article_word_count: int | None = None,
+        live_photo: bool = False,
     ) -> dict[str, Any]:
         if self.receipt:
             cached = self.receipt.cached()
@@ -303,7 +327,31 @@ class XhsCreatorProtocol:
             raise XiaohongshuProtocolError('长文模板和字数必须同时提供')
         if long_article_album_id is not None and (long_article_album_id < 0 or long_article_word_count < 0):
             raise XiaohongshuProtocolError('长文模板和字数无效')
-        file_infos = [self.upload_media(Path(path).read_bytes(), "image").as_reference_dict() for path in image_files]
+        file_infos = []
+        for path in image_files:
+            content = Path(path).read_bytes()
+            is_video = Path(path).suffix.lower() == '.mp4'
+            if is_video:
+                cover_bytes, _ = extract_video_cover_and_metadata(content)
+                video_bytes = content
+                is_live_photo = True
+            else:
+                with Image.open(io.BytesIO(content)) as image:
+                    is_live_photo = image.format == "GIF" and image.is_animated
+            if is_video or is_live_photo or live_photo:
+                if not is_video:
+                    cover_bytes, video_bytes = (
+                        gif_to_live_photo(content)
+                        if is_live_photo else image_to_live_photo(content)
+                    )
+                cover = self.upload_media(cover_bytes, "image")
+                video = self.upload_media(video_bytes, "video")
+                self.wait_transcode(video.video_id)
+                file_info = cover.as_reference_dict()
+                file_info["video_file_id"] = f"spectrum/{video.file_id}"
+            else:
+                file_info = self.upload_media(content, "image").as_reference_dict()
+            file_infos.append(file_info)
         payload = build_image_note_payload(title=title, description=note, file_infos=file_infos)
         if long_article_album_id is not None:
             inject_long_article_trace(payload, long_article_album_id, long_article_word_count)
@@ -338,7 +386,7 @@ class XhsCreatorProtocol:
         payload = parse_json_response(response, "获取小红书上传凭证失败")
         if not payload.get("success"):
             message = payload.get("msg") or payload.get("message") or "获取小红书上传凭证失败，请检查账号 cookie"
-            raise XiaohongshuProtocolError(str(message))
+            raise XiaohongshuProtocolError(f"获取小红书上传凭证失败: {message}")
         return payload
 
     def upload_media(self, file_bytes: bytes, media_type: str) -> MediaInfo:
@@ -368,7 +416,12 @@ class XhsCreatorProtocol:
 
         if media_type == "image":
             width, height = read_image_size(file_bytes)
-            return MediaInfo(file_id=file_id, file_size=len(file_bytes), width=width, height=height)
+            with Image.open(io.BytesIO(file_bytes)) as image:
+                mime_type = Image.MIME.get(image.format, "image/png")
+            return MediaInfo(
+                file_id=file_id, file_size=len(file_bytes),
+                width=width, height=height, mime_type=mime_type,
+            )
 
         video_id = response.headers.get("X-Ros-Video-Id")
         if not video_id:
@@ -444,29 +497,68 @@ class XhsCreatorProtocol:
         }
         headers = ark_json_headers()
         body = _compact_json(data)
-        response = self.session.post(
-            ARK_BASE_URL + XHS_GOODS_LIST_API,
-            headers=headers,
-            cookies=self.cookies,
-            data=body.encode("utf-8"),
-            timeout=REQUEST_TIMEOUT,
-        )
-        if response.status_code == 401:
-            # A valid main-site QR session can lack the creator SSO cookies.
-            # Exchange the existing session exactly as the official entry does;
-            # do not ask the user to log in again or drop the goods binding.
-            self._refresh_creator_authorization()
-            response = self.session.post(
-                ARK_BASE_URL + XHS_GOODS_LIST_API,
-                headers=headers,
-                cookies=self.cookies,
-                data=body.encode("utf-8"),
-                timeout=REQUEST_TIMEOUT,
-            )
-        payload = parse_json_response(response, f"查询小红书商品失败: {keyword}")
-        if not payload.get("success"):
-            raise XiaohongshuProtocolError(str(payload.get("msg") or f"查询小红书商品失败: {keyword}"))
-        return extract_goods_list(payload)
+        action = f"查询小红书商品失败: {keyword}"
+        authorization_refreshed = False
+        for attempt in range(GOODS_QUERY_MAX_ATTEMPTS):
+            try:
+                response = self.session.post(
+                    ARK_BASE_URL + XHS_GOODS_LIST_API,
+                    headers=headers,
+                    cookies=self.cookies,
+                    data=body.encode("utf-8"),
+                    timeout=REQUEST_TIMEOUT,
+                )
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                error = XiaohongshuProtocolError(f"{action} ({type(exc).__name__})")
+                if attempt + 1 == GOODS_QUERY_MAX_ATTEMPTS:
+                    raise error from exc
+            else:
+                try:
+                    payload = response.json()
+                except ValueError:
+                    payload = None
+                if not isinstance(payload, dict):
+                    payload = None
+                code = payload.get("code") if payload else None
+                unauthorized = response.status_code == 401 or str(code) == "-100"
+                if unauthorized and not authorization_refreshed and attempt + 1 < GOODS_QUERY_MAX_ATTEMPTS:
+                    # This read-only lookup may need the official main-site to
+                    # creator SSO exchange, even with a valid upload session.
+                    self._refresh_creator_authorization()
+                    authorization_refreshed = True
+                    continue
+                if response.ok and payload and payload.get("success"):
+                    if payload.get("data") is None and not authorization_refreshed and attempt + 1 < GOODS_QUERY_MAX_ATTEMPTS:
+                        self._refresh_creator_authorization()
+                        authorization_refreshed = True
+                        continue
+                    if payload.get("data") is None:
+                        return recover_cached_goods(self, keyword)
+                    goods = extract_goods_list(payload)
+                    remember_goods(self, goods)
+                    return goods
+                details = [f"HTTP {response.status_code}"]
+                if code is not None:
+                    details.append(f"code={code}")
+                if payload is not None:
+                    message = payload.get("msg") or payload.get("message")
+                    if message:
+                        details.append(str(message).replace("\n", " ")[:160])
+                else:
+                    details.append("non-object JSON or non-JSON response")
+                error = XiaohongshuProtocolError(f"{action} ({'; '.join(details)})")
+                retryable = (
+                    unauthorized
+                    or response.status_code in (408, 429, 500, 502, 503, 504)
+                    or (response.ok and payload is None)
+                )
+                if not retryable or attempt + 1 == GOODS_QUERY_MAX_ATTEMPTS:
+                    raise error
+            # Retry only the idempotent lookup, never a public note submission.
+            delay = GOODS_QUERY_RETRY_DELAYS[attempt]
+            logger.warning("%s; retrying goods lookup in %ss", error, delay)
+            time.sleep(delay)
+        raise AssertionError("goods query retry budget exhausted without a result")
 
     def _refresh_creator_authorization(self) -> None:
         api = "/api/cas/customer/web/service-ticket"
@@ -763,6 +855,8 @@ def build_image_note_payload(*, title: str, description: str, file_infos: list[d
                 ),
             }
         )
+        if file_info.get("video_file_id"):
+            images[-1]["video_file_id"] = file_info["video_file_id"]
     return {
         "common": common_payload("normal", title, description),
         "image_info": {"images": images},
@@ -831,10 +925,128 @@ def extract_group_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def extract_goods_list(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data = payload.get("data") if isinstance(payload, dict) else None
-    goods = (data or {}).get("data") if isinstance(data, dict) else []
+    if not isinstance(data, dict):
+        raise XiaohongshuGoodsUnavailableError(
+            "小红书商品查询异常：接口未返回有效商品数据（data=null 或结构异常），"
+            "不能据此判断商品不存在，请检查商品授权或店铺状态"
+        )
+    goods = data.get("data")
     if not isinstance(goods, list):
         raise XiaohongshuProtocolError("小红书商品列表结构异常，无法继续协议发布")
     return [item for item in goods if isinstance(item, dict)]
+
+
+def _goods_cache_owner(client: XhsCreatorProtocol) -> str:
+    owner = client.cookies.get("x-user-id-creator.xiaohongshu.com", "")
+    return hashlib.sha256(owner.encode()).hexdigest() if owner else ""
+
+
+def _read_goods_cache(client: XhsCreatorProtocol) -> list[dict[str, Any]]:
+    path = client.account_file.with_suffix(".goods.json")
+    owner = _goods_cache_owner(client)
+    if not owner:
+        return []
+    try:
+        authenticated_cache = path.exists()
+        # First-login references are identifiers, never cached authorization.
+        source = path if authenticated_cache else client.account_file.with_suffix(".goods.reference.json")
+        if source.stat().st_size > 1024 * 1024:
+            return []
+        data = json.loads(source.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or (authenticated_cache and data.get("owner") != owner):
+            return []
+        goods = data.get("goods")
+        if not isinstance(goods, list):
+            return []
+        return [g for g in goods[:100] if isinstance(g, dict) and isinstance(g.get("goods_info"), dict)]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
+def remember_goods(client: XhsCreatorProtocol, goods: list[dict[str, Any]]) -> None:
+    """Store identifiers only; cached entries never authorize publishing."""
+    owner = _goods_cache_owner(client)
+    if not owner:
+        return
+    merged = {}
+    for item in [*_read_goods_cache(client), *goods]:
+        info = item.get("goods_info") or {}
+        goods_id = str(info.get("goods_id") or "")
+        if goods_id and info.get("name"):
+            merged[goods_id] = {"goods_info": {
+                key: info[key] for key in ("goods_id", "name", "item_id", "goods_seller_type")
+                if key in info
+            }}
+    path = client.account_file.with_suffix(".goods.json")
+    temporary = path.with_name(path.name + "." + _random_hex(12) + ".tmp")
+    try:
+        temporary.write_text(
+            json.dumps({"owner": owner, "goods": list(merged.values())[-100:]}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        temporary.chmod(0o600)
+        temporary.replace(path)
+    except OSError:
+        temporary.unlink(missing_ok=True)
+        logger.warning("Unable to persist validated goods identifiers")
+
+
+def recover_cached_goods(client: XhsCreatorProtocol, keyword: str) -> list[dict[str, Any]]:
+    """Use the official draft-recovery API, with fresh permission and SKU checks."""
+    error = "小红书商品查询异常：商品搜索未返回数据，原商品映射或当前商品权限未通过校验"
+    wanted = str(keyword or "").strip().casefold()
+    candidates = [
+        g for g in _read_goods_cache(client)
+        if wanted and wanted in _goods_search_text(g).casefold()
+    ][:20]
+    if not candidates:
+        raise XiaohongshuGoodsUnavailableError(error)
+
+    def lookup(api: str, data: dict[str, Any]) -> dict[str, Any]:
+        response = client.session.post(
+            ARK_BASE_URL + api, headers=ark_json_headers(), cookies=client.cookies,
+            data=_compact_json(data).encode("utf-8"), timeout=REQUEST_TIMEOUT,
+        )
+        payload = parse_json_response(response, error)
+        result = payload.get("data")
+        if not payload.get("success") or not isinstance(result, dict):
+            raise XiaohongshuGoodsUnavailableError(error)
+        return result
+
+    permission = lookup("/api/edith/bridge/trade_note/permission", {})
+    permissions = permission.get("publish_permissions")
+    if not isinstance(permissions, list) or not any(
+        isinstance(p, dict) and p.get("type") == 1 and p.get("permission") is True
+        for p in permissions
+    ):
+        raise XiaohongshuGoodsUnavailableError(error)
+    ids = [str(g["goods_info"]["goods_id"]) for g in candidates]
+    info_map = lookup("/api/edith/trade_note/sku_infos", {"sku_ids": ids}).get("sku_info_map")
+    if not isinstance(info_map, dict):
+        raise XiaohongshuGoodsUnavailableError(error)
+    verified = []
+    for cached in candidates:
+        expected = cached["goods_info"]
+        goods_id = str(expected["goods_id"])
+        info = info_map.get(goods_id)
+        if not isinstance(info, dict):
+            continue
+        name = str(info.get("sku_name") or "")
+        item_id = str(info.get("item_id") or "")
+        if (str(info.get("sku_id") or "") != goods_id
+                or str(info.get("sku_status")) != "1"
+                or info.get("goods_seller_type") != "GOODS_SELLER"
+                or not item_id or wanted not in name.casefold()
+                or (expected.get("item_id") and expected["item_id"] != item_id)):
+            continue
+        verified.append({"goods_info": {
+            "goods_id": goods_id, "name": name, "item_id": item_id,
+            "goods_seller_type": "GOODS_SELLER",
+        }})
+    if not verified:
+        raise XiaohongshuGoodsUnavailableError(error)
+    remember_goods(client, verified)
+    return verified
 
 
 def select_group_for_bind(groups: list[dict[str, Any]], group_chat: str) -> dict[str, Any]:
@@ -1105,12 +1317,11 @@ def common_payload(note_type: str, title: str, description: str) -> dict[str, An
 
 
 def read_image_size(file_bytes: bytes) -> tuple[int, int]:
-    import numpy as np
-
-    image = cv2.imdecode(np.frombuffer(file_bytes, np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        raise XiaohongshuProtocolError("小红书协议上传图片解码失败")
-    height, width = image.shape[:2]
+    try:
+        with Image.open(io.BytesIO(file_bytes)) as image:
+            width, height = image.size
+    except OSError as exc:
+        raise XiaohongshuProtocolError("小红书协议上传图片解码失败") from exc
     if width > 2 * height:
         height = int(width / 2)
     return width, height

@@ -1,5 +1,6 @@
 import json,tempfile,unittest
 from pathlib import Path
+from unittest.mock import patch
 import requests
 from uploader.xiaohongshu_uploader import protocol
 
@@ -48,10 +49,11 @@ class CreatorSsoTests(unittest.TestCase):
         self.assertEqual(len(c.query_goods_list('儿时')),1)
         self.assertEqual(len(c.session.calls),1)
     def test_a_second_401_stops_after_one_exchange(self):
-        c=self.client([(401,{},{}),(200,{'success':True},{'galaxy_creator_session_id':'creator-session'}),(401,{}, {})])
-        with self.assertRaisesRegex(protocol.XiaohongshuProtocolError,'查询小红书商品失败'):
+        c=self.client([(401,{},{}),(200,{'success':True},{'galaxy_creator_session_id':'creator-session'}),*[(401,{}, {})]*3])
+        with patch.object(protocol.time,'sleep'), self.assertRaisesRegex(protocol.XiaohongshuProtocolError,'HTTP 401'):
             c.query_goods_list('儿时')
-        self.assertEqual(len(c.session.calls),3)
+        self.assertEqual(len(c.session.calls),5)
+        self.assertEqual(sum(call['url'].endswith('/service-ticket') for call in c.session.calls),1)
     def test_failed_exchange_keeps_the_query_failure_fatal(self):
         c=self.client([(401,{},{}),(200,{'success':False,'code':-100},{})])
         with self.assertRaisesRegex(protocol.XiaohongshuProtocolError,'自动获取'):
